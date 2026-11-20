@@ -49,6 +49,17 @@ CREATE TABLE IF NOT EXISTS pending_logins(
 	expires_at BIGINT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ai_messages(
+	id {{ID}},
+	user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	role TEXT NOT NULL,
+	content TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	tokens_in BIGINT NOT NULL DEFAULT 0,
+	tokens_out BIGINT NOT NULL DEFAULT 0,
+	model TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ai_messages_user ON ai_messages(user_id, id);
 CREATE TABLE IF NOT EXISTS subjects(
 	id {{ID}},
 	name TEXT NOT NULL,
@@ -331,6 +342,9 @@ type Settings struct {
 	GoogleClientID string `json:"google_client_id"`
 	TeacherDomains string `json:"teacher_domains"`
 	StudentDomains string `json:"student_domains"`
+	// Personal assistant on/off per audience (the API key is stored separately, encrypted).
+	AIStudents bool `json:"ai_students"`
+	AITeachers bool `json:"ai_teachers"`
 }
 
 func defaultSettings() Settings {
@@ -348,6 +362,8 @@ func defaultSettings() Settings {
 		SlotStep:       5,
 		TeacherDomains: "zsarcha.cz",
 		StudentDomains: "montetrida.cz",
+		AIStudents:     true,
+		AITeachers:     true,
 	}
 }
 

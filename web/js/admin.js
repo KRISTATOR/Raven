@@ -1,5 +1,5 @@
 import {
-  html, useState, useApp, api, go, Modal, Field, ErrorLine, PageHead, Empty, Swatch, InkPicker, useAsync,
+  html, useState, useEffect, useApp, api, go, Modal, Field, ErrorLine, PageHead, Empty, Swatch, InkPicker, useAsync,
   today, parseISO, iso, addDays, fmtDate, hm, toMin, timeVal, daysBetween, atLeast, ROLE_LABEL, ROLE_INFO, DAYS, cmpCz, plural, TimeInput,
 } from './lib.js';
 
@@ -91,6 +91,44 @@ function UserDialog({ u, onClose, onSaved }) {
 }
 
 // ---------- settings ----------
+function AIForm({ f, set }) {
+  const app = useApp();
+  const [st, setSt] = useState(null);
+  const [key, setKey] = useState('');
+  const [instr, setInstr] = useState(null);
+  useEffect(() => { api('GET', '/api/settings/ai').then((s) => { setSt(s); setInstr(s.instructions); }).catch(() => {}); }, []);
+  const save = async (body, msg) => {
+    try { const s = await api('PUT', '/api/settings/ai', body); setSt(s); setInstr(s.instructions); setKey(''); app.toast(msg); } catch (x) { app.toast(x.message, 'err'); }
+  };
+  return html`<section class="section">
+    <div class="section-head"><h2>Osobní asistent</h2><div class="section-aside">Žáci: Claude Haiku 5.5 · učitelé: Claude Sonnet 5.5 (střední úsilí)</div></div>
+    ${st && html`<p class="ai-status">${st.configured
+      ? (st.readable ? html`API klíč: <b>nastaven</b> <span class="mono">(…${st.hint})</span>` : html`<span class="bad">API klíč nelze načíst – vložte ho prosím znovu.</span>`)
+      : html`<span class="muted">API klíč zatím není nastaven – asistent je vypnutý.</span>`}
+      ${st.usage_30d && st.usage_30d.answers > 0 && html` · za 30 dní ${st.usage_30d.answers} odpovědí`}</p>`}
+    <div class="gate-form">
+      <span class="field-label">API klíč Anthropic</span>
+      <div class="inline-add">
+        <input type="password" autocomplete="off" placeholder="sk-ant-…" value=${key} onInput=${(e) => setKey(e.target.value)} />
+        <button type="button" class="btn" disabled=${key.trim().length < 20} onClick=${() => save({ api_key: key }, 'API klíč uložen.')}>Uložit klíč</button>
+        ${st && st.configured && html`<button type="button" class="btn btn-ghost" onClick=${() => save({ api_key: '' }, 'API klíč odebrán.')}>Odebrat</button>`}
+      </div>
+      <span class="field-hint">Klíč se uloží zašifrovaně (AES-256) a už nikdy se nezobrazí. Zašifrovat, ne zahashovat: Raven ho musí posílat službě Claude.</span>
+    </div>
+    <div class="form-grid" style="margin-top:14px">
+      <label class="check"><input type="checkbox" checked=${f.ai_students} onChange=${(e) => set('ai_students', e.target.checked)} /> Zapnuto pro žáky</label>
+      <label class="check"><input type="checkbox" checked=${f.ai_teachers} onChange=${(e) => set('ai_teachers', e.target.checked)} /> Zapnuto pro učitele</label>
+    </div>
+    <p class="field-hint">Zapnutí pro žáky a učitele se uloží tlačítkem „Uložit nastavení“ dole.</p>
+    ${instr !== null && html`<div class="field" style="margin-top:12px">
+      <span class="field-label">Doplňující pokyny pro asistenta <em>nepovinné, vidí je jen správce</em></span>
+      <textarea rows="3" maxlength="3000" value=${instr} onInput=${(e) => setInstr(e.target.value)} placeholder="např. Při otázkách na obědy odkaž na jídelnu. Žákům tykej."></textarea>
+      <span class="field-hint">Mohou upravit tón nebo zdůraznit témata. Základní pravidla (jen otázky k Ravenu, ochrana před „ignoruj pokyny“, přístup jen k povoleným údajům) jsou pevně v serveru a pokyny je nepřepíšou.</span>
+      <div><button type="button" class="btn" onClick=${() => save({ instructions: instr }, 'Pokyny uloženy.')}>Uložit pokyny</button></div>
+    </div>`}
+  </section>`;
+}
+
 function GateForm() {
   const app = useApp();
   const [pw, setPw] = useState('');
@@ -148,6 +186,7 @@ function SettingsTab() {
       </div>
       <${GateForm} />
     </section>
+    <${AIForm} f=${f} set=${set} />
     <section class="section">
       <div class="section-head"><h2>Délky hodin</h2><div class="section-aside">Učitelé a koordinátoři mohou zakládat jen hodiny těchto délek.</div></div>
       <div class="len-chips">

@@ -45,7 +45,11 @@ type exportFile struct {
 func (a *App) handleExportJSON(w http.ResponseWriter, r *http.Request) {
 	out := exportFile{Format: "raven", Version: 1, ExportedAt: nowStamp(), Tables: map[string][]map[string]any{}}
 	for _, t := range transferTables {
-		rows, err := a.db.Query(`SELECT ` + strings.Join(t.cols, ",") + ` FROM ` + t.name + ` ORDER BY 1`)
+		where := ""
+		if t.name == "settings" {
+			where = ` WHERE key NOT IN ('ai_key','ai_key_hint')` // encrypted for this server only
+		}
+		rows, err := a.db.Query(`SELECT ` + strings.Join(t.cols, ",") + ` FROM ` + t.name + where + ` ORDER BY 1`)
 		if dbErr(w, err) {
 			return
 		}
