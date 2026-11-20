@@ -21,9 +21,12 @@ type User struct {
 	Short    string `json:"short"`
 	Role     string `json:"role"`
 	Active   bool   `json:"active"`
+	Email    string `json:"email"`
+	// HasPassword is false for accounts that only sign in with Google.
+	HasPassword bool `json:"has_password"`
 }
 
-var roleRank = map[string]int{"teacher": 1, "coordinator": 2, "admin": 3}
+var roleRank = map[string]int{"student": 0, "teacher": 1, "coordinator": 2, "admin": 3}
 
 func (u *User) atLeast(role string) bool { return roleRank[u.Role] >= roleRank[role] }
 
@@ -51,13 +54,15 @@ func (a *App) userFromRequest(r *http.Request) *User {
 		return nil
 	}
 	u := &User{}
-	var active int
-	err = a.db.QueryRow(`SELECT u.id,u.username,u.name,u.short,u.role,u.active FROM sessions s JOIN users u ON u.id=s.user_id
-		WHERE s.token=? AND s.expires_at>?`, c.Value, time.Now().Unix()).Scan(&u.ID, &u.Username, &u.Name, &u.Short, &u.Role, &active)
+	var active, hasPw int
+	err = a.db.QueryRow(`SELECT u.id,u.username,u.name,u.short,u.role,u.active,COALESCE(u.email,''),CASE WHEN u.password_hash<>'' THEN 1 ELSE 0 END
+		FROM sessions s JOIN users u ON u.id=s.user_id
+		WHERE s.token=? AND s.expires_at>?`, c.Value, time.Now().Unix()).Scan(&u.ID, &u.Username, &u.Name, &u.Short, &u.Role, &active, &u.Email, &hasPw)
 	if err != nil || active == 0 {
 		return nil
 	}
 	u.Active = true
+	u.HasPassword = hasPw == 1
 	return u
 }
 
@@ -116,7 +121,9 @@ func (a *App) startSession(w http.ResponseWriter, uid int64) error {
 
 func (a *App) handleState(w http.ResponseWriter, r *http.Request) {
 	u := a.userFromRequest(r)
-	writeJSON(w, map[string]any{"needs_setup": a.userCount() == 0, "setup_code_required": a.setupCode != "", "user": u, "school_name": a.loadSettings().SchoolName})
+	s := a.loadSettings()
+	writeJSON(w, map[string]any{"needs_setup": a.userCount() == 0, "setup_code_required": a.setupCode != "", "user": u,
+		"school_name": s.SchoolName, "google_client_id": s.GoogleClientID})
 }
 
 type credentials struct {
@@ -175,8 +182,8 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	var hash string
 	var active int
-	err := a.db.QueryRow(`SELECT id,password_hash,active FROM users WHERE lower(username)=?`, uname).Scan(&id, &hash, &active)
-	if err == nil && active == 1 && bcrypt.CompareHashAndPassword([]byte(hash), []byte(c.Password)) == nil {
+	err := a.db.QueryRow(`SELECT id,password_hash,active FROM users WHERE lower(username)=? OR lower(email)=?`, uname, uname).Scan(&id, &hash, &active)
+	if err == nil && active == 1 && hash != "" && bcrypt.CompareHashAndPassword([]byte(hash), []byte(c.Password)) == nil {
 		_, _ = a.db.Exec(`DELETE FROM login_attempts WHERE username=?`, uname)
 		if err := a.startSession(w, id); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())

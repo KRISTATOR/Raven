@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS login_attempts(
 	ip TEXT NOT NULL,
 	at BIGINT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS pending_logins(
+	token TEXT PRIMARY KEY,
+	email TEXT NOT NULL,
+	name TEXT NOT NULL,
+	expires_at BIGINT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS subjects(
 	id {{ID}},
@@ -252,6 +258,7 @@ func openSQLite(path string) (*DB, error) {
 	if _, err := db.DB.Exec(schemaFor(false)); err != nil {
 		return nil, fmt.Errorf("schéma databáze: %w", err)
 	}
+	migrate(db)
 	return db, nil
 }
 
@@ -284,11 +291,27 @@ func openPostgres(url string) (*DB, error) {
 	var lastErr error
 	for i := 0; i < 3; i++ {
 		if _, lastErr = db.DB.Exec(schemaFor(true)); lastErr == nil {
+			migrate(db)
 			return db, nil
 		}
 		time.Sleep(time.Duration(i+1) * 400 * time.Millisecond)
 	}
 	return nil, fmt.Errorf("schéma databáze: %w", lastErr)
+}
+
+// migrate adds columns introduced after the first release (safe to run repeatedly).
+func migrate(db *DB) {
+	add := "ADD COLUMN"
+	if db.pg {
+		add = "ADD COLUMN IF NOT EXISTS"
+	}
+	for _, q := range []string{
+		"ALTER TABLE users " + add + " email TEXT",
+		"ALTER TABLE students " + add + " email TEXT",
+	} {
+		_, _ = db.DB.Exec(q)
+	}
+	_, _ = db.DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower ON users(lower(email))`)
 }
 
 // Settings is the school-wide configuration, editable by the administrator.
@@ -304,21 +327,27 @@ type Settings struct {
 	TripWeekday   int    `json:"trip_weekday"` // 1 = Monday … 5 = Friday, 0 = none
 	Grades        []int  `json:"grades"`
 	SlotStep      int    `json:"slot_step"`
+	// Sign-in with Google: e-mail domains decide the role.
+	GoogleClientID string `json:"google_client_id"`
+	TeacherDomains string `json:"teacher_domains"`
+	StudentDomains string `json:"student_domains"`
 }
 
 func defaultSettings() Settings {
 	return Settings{
-		SchoolName:    "Naše škola",
-		LessonLengths: []int{40, 45, 55, 60, 90, 110},
-		DayStart:      8*60 + 20,
-		DayEnd:        15 * 60,
-		CircleStart:   8 * 60,
-		CircleEnd:     8*60 + 20,
-		LunchStart:    12 * 60,
-		LunchEnd:      12*60 + 40,
-		TripWeekday:   5,
-		Grades:        []int{7, 8, 9},
-		SlotStep:      5,
+		SchoolName:     "Naše škola",
+		LessonLengths:  []int{40, 45, 55, 60, 90, 110},
+		DayStart:       8*60 + 20,
+		DayEnd:         15 * 60,
+		CircleStart:    8 * 60,
+		CircleEnd:      8*60 + 20,
+		LunchStart:     12 * 60,
+		LunchEnd:       12*60 + 40,
+		TripWeekday:    5,
+		Grades:         []int{7, 8, 9},
+		SlotStep:       5,
+		TeacherDomains: "zsarcha.cz",
+		StudentDomains: "montetrida.cz",
 	}
 }
 

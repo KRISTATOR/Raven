@@ -83,10 +83,11 @@ export function holidayOn(holidays, date) {
 }
 
 // ---------- roles ----------
-export const RANK = { teacher: 1, coordinator: 2, admin: 3 };
+export const RANK = { student: 0, teacher: 1, coordinator: 2, admin: 3 };
 export const atLeast = (me, role) => RANK[me.role] >= RANK[role];
-export const ROLE_LABEL = { teacher: 'Učitel', coordinator: 'Koordinátor', admin: 'Správce' };
+export const ROLE_LABEL = { student: 'Žák', teacher: 'Učitel', coordinator: 'Koordinátor', admin: 'Správce' };
 export const ROLE_INFO = {
+  student: 'Vidí rozvrh a své osobní cíle. Nic neupravuje.',
   teacher: 'Přidává, upravuje a maže jen své hodiny. Zapisuje konzultace a vede cíle své tutorské skupiny.',
   coordinator: 'Navíc upravuje a maže hodiny všech, spravuje žáky, skupiny, předměty a místnosti a vidí historii změn s možností obnovy.',
   admin: 'Navíc spravuje účty, délky hodin, časy dne, výjezdový den, volné dny a zálohy.',

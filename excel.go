@@ -80,8 +80,8 @@ func (a *App) handleExcelExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Žáci
-	_ = f.SetSheetRow(sheetStudents, "A1", &[]any{"ID", "Příjmení", "Jméno", "Ročník", "Tutorská skupina", "Poznámka"})
-	_ = f.SetCellStyle(sheetStudents, "A1", "F1", head)
+	_ = f.SetSheetRow(sheetStudents, "A1", &[]any{"ID", "Příjmení", "Jméno", "Ročník", "Tutorská skupina", "Poznámka", "E-mail"})
+	_ = f.SetCellStyle(sheetStudents, "A1", "G1", head)
 	students := a.listStudents()
 	cz := collate.New(language.Czech, collate.IgnoreCase)
 	sort.SliceStable(students, func(i, j int) bool {
@@ -92,10 +92,10 @@ func (a *App) handleExcelExport(w http.ResponseWriter, r *http.Request) {
 		if s.GroupID != nil {
 			g = groupName[*s.GroupID]
 		}
-		_ = f.SetSheetRow(sheetStudents, fmt.Sprintf("A%d", i+2), &[]any{s.ID, s.LastName, s.FirstName, s.Grade, g, s.Note})
+		_ = f.SetSheetRow(sheetStudents, fmt.Sprintf("A%d", i+2), &[]any{s.ID, s.LastName, s.FirstName, s.Grade, g, s.Note, s.Email})
 	}
 	_ = f.SetCellStyle(sheetStudents, "A2", fmt.Sprintf("A%d", len(students)+300), idStyle)
-	for col, wdt := range map[string]float64{"A": 7, "B": 18, "C": 16, "D": 9, "E": 22, "F": 40} {
+	for col, wdt := range map[string]float64{"A": 7, "B": 18, "C": 16, "D": 9, "E": 22, "F": 34, "G": 30} {
 		_ = f.SetColWidth(sheetStudents, col, col, wdt)
 	}
 	_ = f.SetPanes(sheetStudents, &excelize.Panes{Freeze: true, YSplit: 1, TopLeftCell: "A2", ActivePane: "bottomLeft"})
@@ -252,6 +252,7 @@ func (a *App) handleExcelImport(w http.ResponseWriter, r *http.Request) {
 			}
 			rn := i + 1
 			idS, last, first, gradeS, grp, note := cell(row, 0), cell(row, 1), cell(row, 2), cell(row, 3), cell(row, 4), cell(row, 5)
+			email := strings.ToLower(cell(row, 6))
 			if idS == "" && last == "" && first == "" {
 				continue
 			}
@@ -277,7 +278,7 @@ func (a *App) handleExcelImport(w http.ResponseWriter, r *http.Request) {
 				}
 				gid = &id
 			}
-			s := Student{FirstName: first, LastName: last, Grade: grade, GroupID: gid, Note: note}
+			s := Student{FirstName: first, LastName: last, Grade: grade, GroupID: gid, Note: note, Email: email}
 			label := first + " " + last
 			if idS == "" {
 				stOps = append(stOps, studentOp{0, s, normName(first + " " + last)})
@@ -301,6 +302,9 @@ func (a *App) handleExcelImport(w http.ResponseWriter, r *http.Request) {
 			}
 			if derefOr(cur.GroupID, 0) != derefOr(gid, 0) {
 				ch = append(ch, fmt.Sprintf("skupina: %s → %s", orDash(groupName[derefOr(cur.GroupID, 0)]), orDash(groupName[derefOr(gid, 0)])))
+			}
+			if cur.Email != email {
+				ch = append(ch, fmt.Sprintf("e-mail: %s → %s", orDash(cur.Email), orDash(email)))
 			}
 			if cur.Note != note {
 				ch = append(ch, "poznámka")
@@ -441,13 +445,13 @@ func (a *App) handleExcelImport(w http.ResponseWriter, r *http.Request) {
 	for _, op := range stOps {
 		s := op.s
 		if op.id == 0 {
-			nid, err := tx.InsertID(`INSERT INTO students(first_name,last_name,grade,group_id,note) VALUES(?,?,?,?,?)`, s.FirstName, s.LastName, s.Grade, nullInt(s.GroupID), s.Note)
+			nid, err := tx.InsertID(`INSERT INTO students(first_name,last_name,grade,group_id,note,email) VALUES(?,?,?,?,?,?)`, s.FirstName, s.LastName, s.Grade, nullInt(s.GroupID), s.Note, nullStr(s.Email))
 			if dbErr(w, err) {
 				return
 			}
 			created[op.fullName] = nid
 			created[normName(s.LastName+" "+s.FirstName)] = nid
-		} else if _, err := tx.Exec(`UPDATE students SET first_name=?,last_name=?,grade=?,group_id=?,note=? WHERE id=?`, s.FirstName, s.LastName, s.Grade, nullInt(s.GroupID), s.Note, op.id); dbErr(w, err) {
+		} else if _, err := tx.Exec(`UPDATE students SET first_name=?,last_name=?,grade=?,group_id=?,note=?,email=? WHERE id=?`, s.FirstName, s.LastName, s.Grade, nullInt(s.GroupID), s.Note, nullStr(s.Email), op.id); dbErr(w, err) {
 			return
 		}
 	}

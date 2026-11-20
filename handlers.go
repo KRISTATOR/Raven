@@ -38,6 +38,7 @@ type Student struct {
 	Grade     int    `json:"grade"`
 	GroupID   *int64 `json:"group_id"`
 	Note      string `json:"note"`
+	Email     string `json:"email"`
 }
 
 type Holiday struct {
@@ -55,7 +56,7 @@ func pathID(r *http.Request) int64 {
 var hexColor = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
 
 func (a *App) listUsers(all bool) []User {
-	q := `SELECT id,username,name,short,role,active FROM users`
+	q := `SELECT id,username,name,short,role,active,COALESCE(email,''),CASE WHEN password_hash<>'' THEN 1 ELSE 0 END FROM users`
 	if !all {
 		q += ` WHERE active=1`
 	}
@@ -68,9 +69,10 @@ func (a *App) listUsers(all bool) []User {
 	defer rows.Close()
 	for rows.Next() {
 		var u User
-		var act int
-		_ = rows.Scan(&u.ID, &u.Username, &u.Name, &u.Short, &u.Role, &act)
+		var act, pw int
+		_ = rows.Scan(&u.ID, &u.Username, &u.Name, &u.Short, &u.Role, &act, &u.Email, &pw)
 		u.Active = act == 1
+		u.HasPassword = pw == 1
 		out = append(out, u)
 	}
 	return out
@@ -78,7 +80,7 @@ func (a *App) listUsers(all bool) []User {
 
 func (a *App) listStudents() []Student {
 	out := []Student{}
-	rows, err := a.db.Query(`SELECT id,first_name,last_name,grade,group_id,note FROM students WHERE deleted_at IS NULL ORDER BY lower(last_name), lower(first_name)`)
+	rows, err := a.db.Query(`SELECT id,first_name,last_name,grade,group_id,note,COALESCE(email,'') FROM students WHERE deleted_at IS NULL ORDER BY lower(last_name), lower(first_name)`)
 	if err != nil {
 		return out
 	}
@@ -86,7 +88,7 @@ func (a *App) listStudents() []Student {
 	for rows.Next() {
 		var s Student
 		var g sql.NullInt64
-		_ = rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.Grade, &g, &s.Note)
+		_ = rows.Scan(&s.ID, &s.FirstName, &s.LastName, &s.Grade, &g, &s.Note, &s.Email)
 		if g.Valid {
 			s.GroupID = &g.Int64
 		}
@@ -116,6 +118,10 @@ func (a *App) listGroups() []Group {
 
 func (a *App) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
+	if u.Role == "student" {
+		a.studentBootstrap(w, u)
+		return
+	}
 	subjects := []Subject{}
 	if rows, err := a.db.Query(`SELECT id,name,short,color FROM subjects ORDER BY lower(name)`); err == nil {
 		for rows.Next() {
@@ -192,6 +198,9 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		s.SlotStep = 5
 	}
 	s.SchoolName = strings.TrimSpace(s.SchoolName)
+	s.GoogleClientID = strings.TrimSpace(s.GoogleClientID)
+	s.TeacherDomains = normDomains(s.TeacherDomains)
+	s.StudentDomains = normDomains(s.StudentDomains)
 	if err := a.saveSettings(s); dbErr(w, err) {
 		return
 	}
@@ -215,6 +224,7 @@ func (a *App) handleSaveUser(w http.ResponseWriter, r *http.Request) {
 		Role     string `json:"role"`
 		Active   bool   `json:"active"`
 		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -222,6 +232,10 @@ func (a *App) handleSaveUser(w http.ResponseWriter, r *http.Request) {
 	body.Username = strings.TrimSpace(body.Username)
 	body.Name = strings.TrimSpace(body.Name)
 	body.Short = strings.ToUpper(strings.TrimSpace(body.Short))
+	body.Email = strings.ToLower(strings.TrimSpace(body.Email))
+	if body.Username == "" {
+		body.Username = body.Email
+	}
 	if body.Username == "" || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "Vyplňte jméno a přihlašovací jméno.")
 		return
@@ -235,14 +249,17 @@ func (a *App) handleSaveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if id == 0 {
-		if body.Password == "" {
-			writeErr(w, http.StatusBadRequest, "Zadejte úvodní heslo.")
+		if body.Password == "" && body.Email == "" {
+			writeErr(w, http.StatusBadRequest, "Zadejte úvodní heslo, nebo e-mail pro přihlášení přes Google.")
 			return
 		}
-		h, _ := hashPassword(body.Password)
-		_, err := a.db.Exec(`INSERT INTO users(username,name,short,role,password_hash,active) VALUES(?,?,?,?,?,1)`, body.Username, body.Name, body.Short, body.Role, h)
+		h := ""
+		if body.Password != "" {
+			h, _ = hashPassword(body.Password)
+		}
+		_, err := a.db.Exec(`INSERT INTO users(username,name,short,role,password_hash,active,email) VALUES(?,?,?,?,?,1,?)`, body.Username, body.Name, body.Short, body.Role, h, nullStr(body.Email))
 		if err != nil {
-			writeErr(w, http.StatusConflict, "Přihlašovací jméno už existuje.")
+			writeErr(w, http.StatusConflict, "Přihlašovací jméno nebo e-mail už existuje.")
 			return
 		}
 		a.audit(me.ID, "create", "user", nil, "Vytvořen účet: "+body.Name+" ("+roleLabel(body.Role)+")")
@@ -255,9 +272,9 @@ func (a *App) handleSaveUser(w http.ResponseWriter, r *http.Request) {
 		if body.Active {
 			act = 1
 		}
-		_, err := a.db.Exec(`UPDATE users SET username=?,name=?,short=?,role=?,active=? WHERE id=?`, body.Username, body.Name, body.Short, body.Role, act, id)
+		_, err := a.db.Exec(`UPDATE users SET username=?,name=?,short=?,role=?,active=?,email=? WHERE id=?`, body.Username, body.Name, body.Short, body.Role, act, nullStr(body.Email), id)
 		if err != nil {
-			writeErr(w, http.StatusConflict, "Přihlašovací jméno už existuje.")
+			writeErr(w, http.StatusConflict, "Přihlašovací jméno nebo e-mail už existuje.")
 			return
 		}
 		if body.Password != "" {
@@ -279,6 +296,8 @@ func roleLabel(r string) string {
 		return "správce"
 	case "coordinator":
 		return "koordinátor"
+	case "student":
+		return "žák"
 	}
 	return "učitel"
 }
@@ -428,6 +447,7 @@ func (a *App) handleSaveStudent(w http.ResponseWriter, r *http.Request) {
 	}
 	s.FirstName = strings.TrimSpace(s.FirstName)
 	s.LastName = strings.TrimSpace(s.LastName)
+	s.Email = strings.ToLower(strings.TrimSpace(s.Email))
 	if s.FirstName == "" || s.LastName == "" {
 		writeErr(w, http.StatusBadRequest, "Vyplňte jméno i příjmení.")
 		return
@@ -435,9 +455,9 @@ func (a *App) handleSaveStudent(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
 	var err error
 	if id == 0 {
-		id, err = a.db.InsertID(`INSERT INTO students(first_name,last_name,grade,group_id,note) VALUES(?,?,?,?,?)`, s.FirstName, s.LastName, s.Grade, nullInt(s.GroupID), s.Note)
+		id, err = a.db.InsertID(`INSERT INTO students(first_name,last_name,grade,group_id,note,email) VALUES(?,?,?,?,?,?)`, s.FirstName, s.LastName, s.Grade, nullInt(s.GroupID), s.Note, nullStr(s.Email))
 	} else {
-		_, err = a.db.Exec(`UPDATE students SET first_name=?,last_name=?,grade=?,group_id=?,note=? WHERE id=?`, s.FirstName, s.LastName, s.Grade, nullInt(s.GroupID), s.Note, id)
+		_, err = a.db.Exec(`UPDATE students SET first_name=?,last_name=?,grade=?,group_id=?,note=?,email=? WHERE id=?`, s.FirstName, s.LastName, s.Grade, nullInt(s.GroupID), s.Note, nullStr(s.Email), id)
 	}
 	if dbErr(w, err) {
 		return

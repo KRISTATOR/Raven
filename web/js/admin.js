@@ -42,12 +42,12 @@ function UsersTab() {
     <div class="section-head"><h2>Účty <span class="count">${users.length}</span></h2>
       <div class="section-aside"><button class="btn btn-primary" onClick=${() => setDlg({ u: null })}>+ Nový účet</button></div></div>
     <div class="role-legend">
-      ${['teacher', 'coordinator', 'admin'].map((r) => html`<div><span class=${'role role-' + r}>${ROLE_LABEL[r]}</span><p>${ROLE_INFO[r]}</p></div>`)}
+      ${['student', 'teacher', 'coordinator', 'admin'].map((r) => html`<div><span class=${'role role-' + r}>${ROLE_LABEL[r]}</span><p>${ROLE_INFO[r]}</p></div>`)}
     </div>
     <div class="table-wrap"><table class="ledger ledger-click">
       <thead><tr><th>Jméno</th><th>Zkratka</th><th>Přihlášení</th><th>Role</th><th>Stav</th></tr></thead>
       <tbody>${users.map((u) => html`<tr class=${u.active ? '' : 'inactive'} onClick=${() => setDlg({ u })}>
-        <td><b>${u.name}</b></td><td class="mono">${u.short}</td><td class="mono">${u.username}</td>
+        <td><b>${u.name}</b></td><td class="mono">${u.short}</td><td class="mono small">${u.email || u.username}${!u.has_password && u.email ? html` <span class="muted">(Google)</span>` : ''}</td>
         <td><span class=${'role role-' + u.role}>${ROLE_LABEL[u.role]}</span></td>
         <td>${u.active ? 'aktivní' : html`<span class="muted">deaktivován</span>`}</td>
       </tr>`)}</tbody>
@@ -58,7 +58,7 @@ function UsersTab() {
 
 function UserDialog({ u, onClose, onSaved }) {
   const app = useApp();
-  const [f, setF] = useState(() => u ? { ...u, password: '' } : { name: '', short: '', username: '', role: 'teacher', active: true, password: '' });
+  const [f, setF] = useState(() => u ? { ...u, password: '' } : { name: '', short: '', username: '', email: '', role: 'teacher', active: true, password: '' });
   const [err, setErr] = useState('');
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const save = async (e) => {
@@ -73,14 +73,15 @@ function UserDialog({ u, onClose, onSaved }) {
     <form class="form-grid" onSubmit=${save}>
       <${Field} label="Jméno a příjmení" wide><input required value=${f.name} onInput=${(e) => set('name', e.target.value)} /><//>
       <${Field} label="Zkratka" hint="do rozvrhu, např. NOV" half><input maxlength="5" value=${f.short} onInput=${(e) => set('short', e.target.value)} /><//>
-      <${Field} label="Přihlašovací jméno" half><input required value=${f.username} onInput=${(e) => set('username', e.target.value)} /><//>
+      <${Field} label="E-mail" hint="pro přihlášení přes Google" half><input type="email" value=${f.email || ''} onInput=${(e) => set('email', e.target.value)} /><//>
+      <${Field} label="Přihlašovací jméno" hint="pro přihlášení heslem; prázdné = e-mail" wide><input value=${f.username} onInput=${(e) => set('username', e.target.value)} /><//>
       <div class="field field-wide">
         <span class="field-label">Role</span>
-        ${['teacher', 'coordinator', 'admin'].map((r) => html`<label class="radio radio-block"><input type="radio" checked=${f.role === r} onChange=${() => set('role', r)} />
+        ${['student', 'teacher', 'coordinator', 'admin'].map((r) => html`<label class="radio radio-block"><input type="radio" checked=${f.role === r} onChange=${() => set('role', r)} />
           <span><b>${ROLE_LABEL[r]}</b><br /><span class="muted small">${ROLE_INFO[r]}</span></span></label>`)}
       </div>
-      <${Field} label=${u ? 'Nové heslo' : 'Úvodní heslo'} hint=${u ? 'vyplňte jen při obnově hesla (min. 6 znaků)' : 'min. 6 znaků, učitel si ho pak změní'} wide>
-        <input type="text" autocomplete="off" value=${f.password} onInput=${(e) => set('password', e.target.value)} required=${!u} />
+      <${Field} label=${u ? 'Nové heslo' : 'Úvodní heslo'} hint=${u ? 'vyplňte jen při obnově hesla (min. 6 znaků)' : 'nepovinné, pokud se bude přihlašovat přes Google'} wide>
+        <input type="text" autocomplete="off" value=${f.password} onInput=${(e) => set('password', e.target.value)} />
       <//>
       ${u && html`<label class="check field-wide"><input type="checkbox" checked=${f.active} onChange=${(e) => set('active', e.target.checked)} /> Účet je aktivní (deaktivovaný se nepřihlásí, jeho záznamy zůstanou)</label>`}
       <${ErrorLine} error=${err} />
@@ -90,6 +91,26 @@ function UserDialog({ u, onClose, onSaved }) {
 }
 
 // ---------- settings ----------
+function GateForm() {
+  const app = useApp();
+  const [pw, setPw] = useState('');
+  const save = async (value) => {
+    try {
+      const r = await api('PUT', '/api/settings/gate', { password: value });
+      setPw('');
+      app.toast(r.enabled ? 'Doplňkové heslo uloženo.' : 'Přihlášení mimo školní domény je vypnuté.');
+    } catch (x) { app.toast(x.message, 'err'); }
+  };
+  return html`<div class="gate-form">
+    <span class="field-label">Doplňkové heslo pro adresy mimo školu</span>
+    <div class="inline-add">
+      <input type="text" autocomplete="off" placeholder="nové heslo (min. 8 znaků)" value=${pw} onInput=${(e) => setPw(e.target.value)} />
+      <button type="button" class="btn" disabled=${pw.length < 8} onClick=${() => save(pw)}>Nastavit</button>
+      <button type="button" class="btn btn-ghost" onClick=${() => save('')}>Vypnout</button>
+    </div>
+    <span class="field-hint">Uloží se jen zašifrovaně (hash), současné heslo proto nelze zobrazit.</span>
+  </div>`;
+}
 function SettingsTab() {
   const app = useApp();
   const [f, setF] = useState(() => ({ ...app.settings, grades_text: app.settings.grades.join(', ') }));
@@ -117,6 +138,15 @@ function SettingsTab() {
         <${Field} label="Název školy" half><input value=${f.school_name} onInput=${(e) => set('school_name', e.target.value)} /><//>
         <${Field} label="Ročníky" hint="čísla oddělená čárkou" half><input value=${f.grades_text} onInput=${(e) => set('grades_text', e.target.value)} /><//>
       </div>
+    </section>
+    <section class="section">
+      <div class="section-head"><h2>Přihlašování</h2><div class="section-aside">Role se přiděluje podle domény e-mailu. Ostatní adresy musí zadat doplňkové heslo a získají roli správce.</div></div>
+      <div class="form-grid">
+        <${Field} label="Google Client ID" hint="z Google Cloud Console (končí .apps.googleusercontent.com); prázdné = jen přihlášení heslem" wide><input class="mono" value=${f.google_client_id || ''} onInput=${(e) => set('google_client_id', e.target.value)} /><//>
+        <${Field} label="Domény učitelů" hint="oddělené čárkou" half><input value=${f.teacher_domains || ''} onInput=${(e) => set('teacher_domains', e.target.value)} placeholder="zsarcha.cz" /><//>
+        <${Field} label="Domény žáků" hint="oddělené čárkou" half><input value=${f.student_domains || ''} onInput=${(e) => set('student_domains', e.target.value)} placeholder="montetrida.cz" /><//>
+      </div>
+      <${GateForm} />
     </section>
     <section class="section">
       <div class="section-head"><h2>Délky hodin</h2><div class="section-aside">Učitelé a koordinátoři mohou zakládat jen hodiny těchto délek.</div></div>

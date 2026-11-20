@@ -75,7 +75,7 @@ export function PeoplePage() {
           const g = s.group_id && maps.groups[s.group_id];
           const t = g && g.tutor_id && maps.users[g.tutor_id];
           return html`<tr>
-            <td><b>${studentNameRev(s)}</b>${s.note && html`<br /><span class="muted small">${s.note}</span>`}</td>
+            <td><b>${studentNameRev(s)}</b>${s.email && html`<br /><span class="mono small muted">${s.email}</span>`}${s.note && html`<br /><span class="muted small">${s.note}</span>`}</td>
             <td class="mono">${s.grade}.</td>
             <td>${g ? html`<${Swatch} color=${g.color} /> ${g.name}` : html`<span class="muted">—</span>`}</td>
             <td class="small">${t ? t.name : '—'}</td>
@@ -96,7 +96,7 @@ export function PeoplePage() {
 function StudentDialog({ s, onClose, onSaved }) {
   const app = useApp();
   const { boot } = app;
-  const [f, setF] = useState(() => s ? { ...s } : { first_name: '', last_name: '', grade: boot.settings.grades[0] || 7, group_id: null, note: '' });
+  const [f, setF] = useState(() => s ? { ...s } : { first_name: '', last_name: '', grade: boot.settings.grades[0] || 7, group_id: null, note: '', email: '' });
   const [err, setErr] = useState('');
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const save = async (e) => {
@@ -126,6 +126,7 @@ function StudentDialog({ s, onClose, onSaved }) {
           <option value="">— bez skupiny —</option>${boot.groups.map((g) => html`<option value=${g.id}>${g.name}</option>`)}
         </select>
       <//>
+      <${Field} label="Školní e-mail" hint="@montetrida.cz – podle něj se žák po přihlášení přes Google propojí se svým záznamem" wide><input type="email" value=${f.email || ''} onInput=${(e) => set('email', e.target.value)} placeholder="jmeno.prijmeni@montetrida.cz" /><//>
       <${Field} label="Poznámka" hint="viditelná všem učitelům" wide><input value=${f.note} onInput=${(e) => set('note', e.target.value)} /><//>
       <${ErrorLine} error=${err} />
       <div class="form-actions">

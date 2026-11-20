@@ -478,3 +478,12 @@ input[type=file] { border-style: dashed; background: transparent; padding: 10px;
   .day.is-hol, .band, .day-head.is-today { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .now { display: none; }
 }
+
+/* ---------- sign-in with Google & roles added later ---------- */
+.auth-google + .auth-form { border-top: 2px solid var(--ink); }
+.gbtn { min-height: 44px; display: flex; justify-content: center; }
+.me-email { text-transform: none; letter-spacing: 0; padding-top: 0; }
+.role-student { background: var(--yellow); }
+@media (min-width: 901px) { .role-legend { grid-template-columns: repeat(4, 1fr); } }
+.gate-form { margin-top: 16px; display: flex; flex-direction: column; gap: 5px; }
+.gate-form .inline-add { margin: 0; max-width: 560px; }

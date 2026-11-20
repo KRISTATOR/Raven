@@ -1,10 +1,11 @@
-import { html, render, useState, useEffect, useMemo, useCallback, Ctx, api, useHash, go, Modal, Field, ErrorLine, ROLE_LABEL, atLeast } from './lib.js';
+import { html, render, useState, useEffect, useMemo, useCallback, useRef, Ctx, api, useHash, go, Modal, Field, ErrorLine, ROLE_LABEL, atLeast } from './lib.js';
 import { Dashboard } from './dashboard.js';
 import { SchedulePage } from './schedule.js';
 import { ConsultationsPage } from './consultations.js';
 import { GoalsPage } from './goals.js';
 import { PeoplePage } from './people.js';
 import { AdminPage } from './admin.js';
+import { MyGoalsPage } from './student.js';
 
 function Wordmark({ small }) {
   return html`<span class=${'wordmark' + (small ? ' wordmark-s' : '')} aria-label="Raven"><span>Raven</span></span>`;
@@ -73,23 +74,77 @@ function Setup({ onDone, codeRequired }) {
   <//>`;
 }
 
-function Login({ school, onDone }) {
+function GoogleButton({ clientId, onCredential }) {
+  const ref = useRef(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const init = () => {
+      try {
+        window.google.accounts.id.initialize({ client_id: clientId, callback: (r) => onCredential(r.credential), ux_mode: 'popup' });
+        window.google.accounts.id.renderButton(ref.current, { theme: 'filled_black', size: 'large', shape: 'rectangular', text: 'signin_with', locale: 'cs', width: Math.min(360, ref.current.offsetWidth || 320) });
+      } catch { setFailed(true); }
+    };
+    if (window.google && window.google.accounts && window.google.accounts.id) { init(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.onload = init;
+    s.onerror = () => setFailed(true);
+    document.head.appendChild(s);
+  }, [clientId]);
+  return failed ? html`<p class="error-line">Přihlašovací tlačítko Google se nepodařilo načíst. Zkontrolujte připojení k internetu.</p>` : html`<div class="gbtn" ref=${ref}></div>`;
+}
+
+function Login({ school, googleClientId, onDone }) {
   const [f, setF] = useState({ username: '', password: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [gate, setGate] = useState(null);
+  const [gatePw, setGatePw] = useState('');
+  const [showPw, setShowPw] = useState(!googleClientId);
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     try { await api('POST', '/api/login', f, { quiet: true }); onDone(); } catch (x) { setErr(x.message); setBusy(false); }
   };
+  const onGoogle = async (credential) => {
+    setErr(''); setBusy(true);
+    try {
+      const r = await api('POST', '/api/auth/google', { credential }, { quiet: true });
+      if (r.need_gate) { setGate(r); setBusy(false); return; }
+      onDone();
+    } catch (x) { setErr(x.message); setBusy(false); }
+  };
+  const submitGate = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try { await api('POST', '/api/auth/gate', { ticket: gate.ticket, password: gatePw }, { quiet: true }); onDone(); } catch (x) { setErr(x.message); setBusy(false); }
+  };
+  if (gate) {
+    return html`<${AuthFrame} school=${school}>
+      <form class="auth-form" onSubmit=${submitGate}>
+        <p class="auth-lead"><b>${gate.email}</b> není školní adresa. Pro pokračování zadejte doplňkové heslo.</p>
+        <${Field} label="Doplňkové heslo"><input required type="password" autocomplete="off" value=${gatePw} onInput=${(e) => setGatePw(e.target.value)} /><//>
+        <${ErrorLine} error=${err} />
+        <button class="btn btn-primary btn-block" disabled=${busy}>${busy ? 'Ověřuji…' : 'Pokračovat'}</button>
+        <button type="button" class="btn btn-ghost btn-block" onClick=${() => { setGate(null); setErr(''); setGatePw(''); }}>Zpět</button>
+      </form>
+    <//>`;
+  }
   return html`<${AuthFrame} school=${school}>
-    <form class="auth-form" onSubmit=${submit}>
+    ${googleClientId && html`<div class="auth-form auth-google">
+      <p class="auth-lead">Přihlaste se školním účtem Google.</p>
+      <${GoogleButton} clientId=${googleClientId} onCredential=${onGoogle} />
+      ${!showPw && html`<${ErrorLine} error=${err} />`}
+      ${!showPw && html`<button type="button" class="btn btn-ghost btn-block" onClick=${() => setShowPw(true)}>Přihlásit se jménem a heslem</button>`}
+    </div>`}
+    ${showPw && html`<form class="auth-form" onSubmit=${submit}>
       <${Field} label="Přihlašovací jméno"><input required autocomplete="username" value=${f.username} onInput=${(e) => setF({ ...f, username: e.target.value })} /><//>
       <${Field} label="Heslo"><input required type="password" autocomplete="current-password" value=${f.password} onInput=${(e) => setF({ ...f, password: e.target.value })} /><//>
       <${ErrorLine} error=${err} />
       <button class="btn btn-primary btn-block" disabled=${busy}>${busy ? 'Přihlašuji…' : 'Přihlásit se'}</button>
       <p class="auth-note">Zapomenuté heslo obnoví správce v sekci Správa → Uživatelé.</p>
-    </form>
+    </form>`}
   <//>`;
 }
 
@@ -146,8 +201,12 @@ function Shell() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  const isStudent = me.role === 'student';
+  const nav = isStudent ? [['rozvrh', 'Rozvrh'], ['moje-cile', 'Moje cíle']] : NAV.filter(([, , role]) => !role || atLeast(me, role));
   let page;
-  switch (route.path) {
+  if (isStudent) {
+    page = route.path === 'moje-cile' ? html`<${MyGoalsPage} />` : html`<${SchedulePage} params=${route.params} />`;
+  } else switch (route.path) {
     case 'rozvrh': page = html`<${SchedulePage} params=${route.params} />`; break;
     case 'konzultace': page = html`<${ConsultationsPage} params=${route.params} />`; break;
     case 'cile': page = html`<${GoalsPage} params=${route.params} />`; break;
@@ -157,13 +216,13 @@ function Shell() {
   }
   return html`<div class="shell">
     <header class="top">
-      <a class="brand" href="#/prehled">
+      <a class="brand" href=${isStudent ? '#/rozvrh' : '#/prehled'}>
         <${Wordmark} small />
         <span class="brand-school">${boot.settings.school_name}</span>
       </a>
       <nav class="nav">
-        ${NAV.filter(([, , role]) => !role || atLeast(me, role)).map(([p, label]) =>
-          html`<a href=${'#/' + p} class=${'nav-link' + (route.path === p ? ' on' : '')}>${label}</a>`)}
+        ${nav.map(([p, label]) =>
+          html`<a href=${'#/' + p} class=${'nav-link' + (route.path === p || (isStudent && p === 'rozvrh' && route.path !== 'moje-cile') ? ' on' : '')}>${label}</a>`)}
       </nav>
       <div class="me">
         <button class="me-btn" onClick=${() => setMenu(!menu)} aria-expanded=${menu}>
@@ -172,7 +231,8 @@ function Shell() {
         </button>
         ${menu && html`<div class="me-menu" onMouseLeave=${() => setMenu(false)}>
           <div class="me-role">${ROLE_LABEL[me.role]}</div>
-          <button onClick=${() => { setMenu(false); setPw(true); }}>Změnit heslo</button>
+          ${me.email && html`<div class="me-role me-email">${me.email}</div>`}
+          ${me.has_password && html`<button onClick=${() => { setMenu(false); setPw(true); }}>Změnit heslo</button>`}
           <button onClick=${app.logout}>Odhlásit se</button>
         </div>`}
       </div>
@@ -240,7 +300,7 @@ function App() {
   if (fatal) return html`<${AuthFrame}><div class="auth-form"><p class="error-line">${fatal}</p><button class="btn btn-primary btn-block" onClick=${loadState}>Zkusit znovu</button></div><//>`;
   if (!state) return html`<div class="loading">Načítám…</div>`;
   if (state.needs_setup) return html`<${Setup} codeRequired=${state.setup_code_required} onDone=${loadState} />`;
-  if (!state.user && !boot) return html`<${Login} school=${state.school_name} onDone=${loadState} />`;
+  if (!state.user && !boot) return html`<${Login} school=${state.school_name} googleClientId=${state.google_client_id} onDone=${loadState} />`;
   if (!ctx) return html`<div class="loading">Načítám…</div>`;
   return html`<${Ctx.Provider} value=${ctx}><${Shell} />${overlays}<//>`;
 }

@@ -18,12 +18,12 @@ type tableDef struct {
 }
 
 var transferTables = []tableDef{
-	{"users", []string{"id", "username", "name", "short", "role", "password_hash", "active", "created_at"}, true},
+	{"users", []string{"id", "username", "name", "short", "role", "password_hash", "active", "created_at", "email"}, true},
 	{"settings", []string{"key", "value"}, false},
 	{"subjects", []string{"id", "name", "short", "color"}, true},
 	{"rooms", []string{"id", "name"}, true},
 	{"tutor_groups", []string{"id", "name", "tutor_id", "color", "note"}, true},
-	{"students", []string{"id", "first_name", "last_name", "grade", "group_id", "note", "deleted_at"}, true},
+	{"students", []string{"id", "first_name", "last_name", "grade", "group_id", "note", "deleted_at", "email"}, true},
 	{"holidays", []string{"id", "date_from", "date_to", "name"}, true},
 	{"day_notes", []string{"date", "text", "updated_by"}, false},
 	{"events", []string{"id", "kind", "date", "start_min", "end_min", "subject_id", "title", "room_id", "owner_id", "capacity", "note", "series_id", "created_by", "created_at", "updated_at", "deleted_at", "deleted_by"}, true},

@@ -78,7 +78,7 @@ export function SchedulePage({ params }) {
 
   const visible = useMemo(() => data.events.filter((ev) => {
     if (filter === 'all') return true;
-    if (filter === 'mine') return teachersOf(ev).includes(me.id);
+    if (filter === 'mine') return me.role === 'student' || teachersOf(ev).includes(me.id);
     const [k, id] = filter.split(':');
     if (k === 'u') return teachersOf(ev).includes(Number(id));
     if (k === 'r') return ev.room_id === Number(id);
@@ -95,7 +95,10 @@ export function SchedulePage({ params }) {
   for (let m = gridStart; m <= gridEnd; m += 30) marks.push(m);
 
   const step = settings.slot_step || 5;
+  const readOnly = me.role === 'student';
+  const myGroupId = readOnly && boot.students[0] ? boot.students[0].group_id : null;
   const clickDay = (date, e) => {
+    if (readOnly) return;
     const hol = holidayOn(boot.holidays, date);
     if (hol && !atLeast(me, 'admin')) { app.toast(`${hol.name} – na volné dny nelze plánovat.`, 'err'); return; }
     const rect = e.currentTarget.getBoundingClientRect();
@@ -129,7 +132,7 @@ export function SchedulePage({ params }) {
         <span class="field-label">Zobrazit</span>
         <select value=${filter} onChange=${(e) => setFilter(e.target.value)}>
           <option value="all">Celou školu</option>
-          <option value="mine">Jen moje</option>
+          ${readOnly ? (myGroupId && html`<option value=${'g:' + myGroupId}>Výjezdy mé skupiny</option>`) : html`<option value="mine">Jen moje</option>`}
           <optgroup label="Typ">
             <option value="k:lesson">Jen hodiny</option>
             <option value="k:trip">Jen výjezdy</option>
@@ -141,8 +144,8 @@ export function SchedulePage({ params }) {
       </label>
       <div class="toolbar-spacer"></div>
       <button class="btn" onClick=${() => window.print()}>Tisk</button>
-      <button class="btn" onClick=${() => setCopyOpen(true)}>Kopírovat týden…</button>
-      <button class="btn btn-primary" onClick=${() => setDialog({ preset: { date: days[Math.min(mDay, 4)], start: settings.day_start, kind: 'lesson' } })}>+ Přidat do rozvrhu</button>
+      ${!readOnly && html`<button class="btn" onClick=${() => setCopyOpen(true)}>Kopírovat týden…</button>
+      <button class="btn btn-primary" onClick=${() => setDialog({ preset: { date: days[Math.min(mDay, 4)], start: settings.day_start, kind: 'lesson' } })}>+ Přidat do rozvrhu</button>`}
     </div>
 
     <div class="mday-tabs">
@@ -186,7 +189,7 @@ export function SchedulePage({ params }) {
         </div>`;
       })}
     </div>
-    <p class="grid-hint">Klikněte do prázdného místa v rozvrhu a přidáte hodinu na daný čas. ${tripDayName ? `Výjezdový den: ${tripDayName}.` : ''}</p>
+    <p class="grid-hint">${readOnly ? '' : 'Klikněte do prázdného místa v rozvrhu a přidáte hodinu na daný čas. '}${tripDayName ? `Výjezdový den: ${tripDayName}.` : ''}</p>
 
     ${dialog && html`<${EventDialog} ev=${dialog.ev} preset=${dialog.preset} onClose=${() => setDialog(null)} onSaved=${() => { setDialog(null); load(); }} />`}
     ${copyOpen && html`<${CopyWeekDialog} week=${week} onClose=${() => setCopyOpen(false)} onDone=${(target) => { setCopyOpen(false); go('rozvrh', { w: target }); }} />`}
@@ -269,7 +272,7 @@ function CopyWeekDialog({ week, onClose, onDone }) {
 }
 
 function EventDetail({ ev, onClose }) {
-  const { maps } = useApp();
+  const { maps, me } = useApp();
   const owner = maps.users[ev.owner_id];
   const extra = (ev.teacher_ids || []).map((id) => maps.users[id]).filter(Boolean);
   const room = ev.room_id && maps.rooms[ev.room_id];
@@ -287,7 +290,7 @@ function EventDetail({ ev, onClose }) {
       ${ev.note && html`<dt>Poznámka</dt><dd class="pre">${ev.note}</dd>`}
       ${ev.series_id && html`<dt>Opakování</dt><dd>Součást týdenní řady</dd>`}
     </dl>
-    <p class="muted">Upravit může jen ${owner ? owner.name : 'vyučující'}, koordinátor nebo správce.</p>
+    ${me.role !== 'student' && html`<p class="muted">Upravit může jen ${owner ? owner.name : 'vyučující'}, koordinátor nebo správce.</p>`}
   <//>`;
 }
 

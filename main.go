@@ -221,14 +221,18 @@ func openBrowser(url string) {
 
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
-	T, C, A := "teacher", "coordinator", "admin"
+	S, T, C, A := "student", "teacher", "coordinator", "admin"
 
 	mux.HandleFunc("GET /api/state", a.handleState)
 	mux.HandleFunc("POST /api/setup", a.handleSetup)
 	mux.HandleFunc("POST /api/login", a.handleLogin)
 	mux.HandleFunc("POST /api/logout", a.handleLogout)
-	mux.HandleFunc("POST /api/me/password", a.auth(T, a.handleChangePassword))
-	mux.HandleFunc("GET /api/bootstrap", a.auth(T, a.handleBootstrap))
+	mux.HandleFunc("POST /api/auth/google", a.handleGoogleLogin)
+	mux.HandleFunc("POST /api/auth/gate", a.handleGate)
+	mux.HandleFunc("POST /api/me/password", a.auth(S, a.handleChangePassword))
+	mux.HandleFunc("GET /api/bootstrap", a.auth(S, a.handleBootstrap))
+	mux.HandleFunc("GET /api/student/goals", a.auth(S, a.handleStudentGoals))
+	mux.HandleFunc("PUT /api/settings/gate", a.auth(A, a.handleSaveGate))
 
 	mux.HandleFunc("PUT /api/settings", a.auth(A, a.handleSaveSettings))
 	mux.HandleFunc("GET /api/users", a.auth(A, a.handleListUsers))
@@ -255,7 +259,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/holidays/{id}", a.auth(A, a.handleDeleteHoliday))
 	mux.HandleFunc("PUT /api/daynotes/{date}", a.auth(C, a.handleSaveDayNote))
 
-	mux.HandleFunc("GET /api/events", a.auth(T, a.handleListEvents))
+	mux.HandleFunc("GET /api/events", a.auth(S, a.handleListEvents))
 	mux.HandleFunc("POST /api/events", a.auth(T, a.handleCreateEvent))
 	mux.HandleFunc("PUT /api/events/{id}", a.auth(T, a.handleUpdateEvent))
 	mux.HandleFunc("DELETE /api/events/{id}", a.auth(T, a.handleDeleteEvent))
