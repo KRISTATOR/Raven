@@ -6,9 +6,11 @@ import { GoalsPage } from './goals.js';
 import { PeoplePage } from './people.js';
 import { AdminPage } from './admin.js';
 import { MyGoalsPage } from './student.js';
+import { AboutPage } from './about.js';
+import { Mark, ThemeToggle } from './lib.js';
 
 function Wordmark({ small }) {
-  return html`<span class=${'wordmark' + (small ? ' wordmark-s' : '')} aria-label="Raven"><span>Raven</span></span>`;
+  return html`<span class=${'wordmark' + (small ? ' wordmark-s' : '')} aria-label="Raven"><${Mark} /><span>Raven</span></span>`;
 }
 
 function AuthFrame({ school, children }) {
@@ -16,11 +18,13 @@ function AuthFrame({ school, children }) {
     <div class="auth-card">
       <div class="auth-top">
         <${Wordmark} />
+        <div class="auth-tagline">Vnáší světlo do školního týdne.</div>
         <div class="auth-school">${school || 'školní plánovač'}</div>
       </div>
       ${children}
     </div>
-    <div class="auth-foot">rozvrh · konzultace · osobní cíle</div>
+    <div class="auth-links"><span>rozvrh · konzultace · osobní cíle</span></div>
+    <${ThemeToggle} />
   </div>`;
 }
 
@@ -204,7 +208,9 @@ function Shell() {
   const isStudent = me.role === 'student';
   const nav = isStudent ? [['rozvrh', 'Rozvrh'], ['moje-cile', 'Moje cíle']] : NAV.filter(([, , role]) => !role || atLeast(me, role));
   let page;
-  if (isStudent) {
+  if (route.path === 'o-nazvu') {
+    page = html`<${AboutPage} />`;
+  } else if (isStudent) {
     page = route.path === 'moje-cile' ? html`<${MyGoalsPage} />` : html`<${SchedulePage} params=${route.params} />`;
   } else switch (route.path) {
     case 'rozvrh': page = html`<${SchedulePage} params=${route.params} />`; break;
@@ -225,6 +231,7 @@ function Shell() {
           html`<a href=${'#/' + p} class=${'nav-link' + (route.path === p || (isStudent && p === 'rozvrh' && route.path !== 'moje-cile') ? ' on' : '')}>${label}</a>`)}
       </nav>
       <div class="me">
+        <${ThemeToggle} />
         <button class="me-btn" onClick=${() => setMenu(!menu)} aria-expanded=${menu}>
           <span class="me-short">${me.short || me.name.slice(0, 2).toUpperCase()}</span>
           <span class="me-name">${me.name}</span>
@@ -233,6 +240,7 @@ function Shell() {
           <div class="me-role">${ROLE_LABEL[me.role]}</div>
           ${me.email && html`<div class="me-role me-email">${me.email}</div>`}
           ${me.has_password && html`<button onClick=${() => { setMenu(false); setPw(true); }}>Změnit heslo</button>`}
+          <button onClick=${() => { setMenu(false); go('o-nazvu'); }}>O názvu Raven</button>
           <button onClick=${app.logout}>Odhlásit se</button>
         </div>`}
       </div>
