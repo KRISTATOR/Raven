@@ -10,10 +10,10 @@ func TestSchoolName(t *testing.T) {
 	}{
 		{"jan.novak@zsarcha.cz", nil, "Jan Novak"},
 		{"jan.novak@zsarcha.cz", []string{"Jan Novák"}, "Jan Novák"},
-		{"jan.novak@zsarcha.cz", []string{"Novák Jan"}, "Jan Novák"},              // surname first
+		{"jan.novak@zsarcha.cz", []string{"Novák Jan"}, "Jan Novák"},                // surname first
 		{"vojta.strobl@zsarcha.cz", []string{"eIndex VojtaŠtrobl"}, "Vojta Štrobl"}, // junk around, no space
-		{"jan.novak@zsarcha.cz", []string{"Pepa Zdepa"}, "Jan Novak"},             // a made-up name is ignored
-		{"jan.novak@zsarcha.cz", []string{"Jana Nováková"}, "Jan Novak"},          // close is not enough
+		{"jan.novak@zsarcha.cz", []string{"Pepa Zdepa"}, "Jan Novak"},               // a made-up name is ignored
+		{"jan.novak@zsarcha.cz", []string{"Jana Nováková"}, "Jan Novak"},            // close is not enough
 		{"anna-marie.dvorakova@montetrida.cz", []string{"Anna-Marie Dvořáková"}, "Anna-Marie Dvořáková"},
 		{"borivoj.libal2@montetrida.cz", []string{"Bořivoj Líbal"}, "Bořivoj Líbal"}, // digits dropped
 		{"petr.van.der.berg@zsarcha.cz", nil, "Petr Van Der Berg"},

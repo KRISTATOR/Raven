@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 	_ "time/tzdata"
 )
@@ -123,26 +124,64 @@ func runOnline(url string) {
 	if port == "" {
 		port = "3000"
 	}
-	db, err := openPostgres(url)
-	if err != nil {
+	// The handler is swapped in once the database answers, so a full connection pool
+	// at start-up (e.g. right after a new deployment) heals by itself.
+	var current atomic.Value
+	start := func() error {
+		db, err := openPostgres(url)
+		if err != nil {
+			return err
+		}
+		app := &App{db: db, pg: true, setupCode: os.Getenv("SETUP_CODE"), secure: true}
+		if app.setupCode == "" {
+			app.setupCode = randToken(16) // never leave first-run setup open on the internet
+			log.Printf("SETUP_CODE není nastaven – vytvoření prvního účtu je zablokováno")
+		}
+		if n := app.syncSchoolNames(); n > 0 {
+			log.Printf("Jména podle školního e-mailu: opraveno %d účtů", n)
+		}
+		current.Store(app.routes())
+		log.Printf("Raven online, port %s", port)
+		return nil
+	}
+	if err := start(); err != nil {
 		log.Printf("databáze: %v", err)
-		serveConfigPage(port, "Nepodařilo se připojit k databázi. Zkontrolujte proměnnou DATABASE_URL (Session pooler, správné heslo).", err.Error())
-		return
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "neplatná adresa") || strings.Contains(msg, "password authentication") || strings.Contains(msg, "tenant or user not found") {
+			serveConfigPage(port, "Nepodařilo se připojit k databázi. Zkontrolujte proměnnou DATABASE_URL (Session pooler, správné heslo).", err.Error())
+			return
+		}
+		current.Store(busyHandler())
+		go func() {
+			for i := 1; ; i++ {
+				time.Sleep(time.Duration(min(i, 6)) * 5 * time.Second)
+				if err := start(); err == nil {
+					return
+				} else {
+					log.Printf("databáze (pokus %d): %v", i, err)
+				}
+			}
+		}()
 	}
-	app := &App{db: db, pg: true, setupCode: os.Getenv("SETUP_CODE"), secure: true}
-	if port == "" {
-		port = "3000"
-	}
-	if app.setupCode == "" {
-		app.setupCode = randToken(16) // never leave first-run setup open on the internet
-		log.Printf("SETUP_CODE není nastaven – vytvoření prvního účtu je zablokováno")
-	}
-	if n := app.syncSchoolNames(); n > 0 {
-		log.Printf("Jména podle školního e-mailu: opraveno %d účtů", n)
-	}
-	log.Printf("Raven online, port %s", port)
-	srv := &http.Server{Addr: ":" + port, Handler: app.routes(), ReadHeaderTimeout: 10 * time.Second}
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { current.Load().(http.Handler).ServeHTTP(w, r) })
+	srv := &http.Server{Addr: ":" + port, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
+}
+
+// busyHandler answers while the database is still out of reach.
+func busyHandler() http.Handler {
+	const msg = "Databáze je právě přetížená nebo se probouzí. Raven se připojí sám – zkuste to prosím za chvíli znovu."
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", "10")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeErr(w, http.StatusServiceUnavailable, msg)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`<!doctype html><html lang="cs"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>Raven</title><style>body{font:16px/1.5 Arial,sans-serif;background:#121316;color:#E9E6DD;margin:0;padding:24px 16px}main{max-width:560px;margin:12vh auto}</style><main><h1>RAVEN</h1><p>` + msg + `</p><p style="color:#8A877E">Stránka se obnoví sama.</p></main></html>`))
+	})
 }
 
 func runNotConfigured() {

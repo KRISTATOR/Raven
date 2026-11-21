@@ -309,9 +309,13 @@ func openPostgres(url string) (*DB, error) {
 		_, err := c.Exec(ctx, "SET search_path TO "+schema)
 		return err
 	}))
-	sdb.SetMaxOpenConns(5)
-	sdb.SetMaxIdleConns(2)
-	sdb.SetConnMaxIdleTime(60 * time.Second)
+	// Supabase's session pooler has only a handful of slots (15 on the free plan) and
+	// every connection holds one. Vercel freezes idle copies of the server with their
+	// connections still open, so keep very few and let them go quickly.
+	sdb.SetMaxOpenConns(3)
+	sdb.SetMaxIdleConns(1)
+	sdb.SetConnMaxIdleTime(15 * time.Second)
+	sdb.SetConnMaxLifetime(5 * time.Minute)
 	db := &DB{sdb, true}
 	var lastErr error
 	for i := 0; i < 3; i++ {
@@ -321,6 +325,7 @@ func openPostgres(url string) (*DB, error) {
 		}
 		time.Sleep(time.Duration(i+1) * 400 * time.Millisecond)
 	}
+	_ = sdb.Close()
 	return nil, fmt.Errorf("schéma databáze: %w", lastErr)
 }
 
