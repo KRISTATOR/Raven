@@ -48,6 +48,9 @@ function weekTitle(mon) {
   return `${a.getDate()}. ${MONTHS_GEN[a.getMonth()]} – ${b.getDate()}. ${MONTHS_GEN[b.getMonth()]} ${b.getFullYear()}`;
 }
 
+const LANE_H = 60;      // height of one lane (one class running at that time)
+const TRACK_MIN_W = 900; // minimum width of the time axis before the page scrolls sideways
+
 export function SchedulePage({ params }) {
   const app = useApp();
   const { me, maps, settings, boot } = app;
@@ -59,7 +62,6 @@ export function SchedulePage({ params }) {
   const [dialog, setDialog] = useState(null);
   const [copyOpen, setCopyOpen] = useState(false);
   const [noteDay, setNoteDay] = useState(null);
-  const [mDay, setMDay] = useState(() => Math.min(Math.max(weekdayOf(today()), 1), 5) - 1);
   const [, tick] = useState(0);
   const setFilter = (f) => { setFilterRaw(f); persist('filter', f); };
 
@@ -87,22 +89,23 @@ export function SchedulePage({ params }) {
     return true;
   }), [data, filter, me.id]);
 
+  // Time axis: whole hours, covering the school day and every visible class.
   const starts = visible.map((e) => e.start), ends = visible.map((e) => e.end);
-  const gridStart = Math.floor(Math.min(settings.circle_start || settings.day_start, settings.day_start, ...starts) / 30) * 30;
-  const gridEnd = Math.ceil(Math.max(settings.day_end, ...ends) / 30) * 30;
-  const height = (gridEnd - gridStart) * PPM;
+  const gridStart = Math.floor(Math.min(settings.circle_start || settings.day_start, settings.day_start, ...starts) / 60) * 60;
+  const gridEnd = Math.ceil(Math.max(settings.day_end, ...ends) / 60) * 60;
+  const span = gridEnd - gridStart;
+  const pct = (m) => ((m - gridStart) / span) * 100;
   const marks = [];
   for (let m = gridStart; m <= gridEnd; m += 30) marks.push(m);
 
   const step = settings.slot_step || 5;
   const readOnly = me.role === 'student';
-  const myGroupId = readOnly && boot.students[0] ? boot.students[0].group_id : null;
   const clickDay = (date, e) => {
     if (readOnly) return;
     const hol = holidayOn(boot.holidays, date);
     if (hol && !atLeast(me, 'admin')) { app.toast(`${hol.name} – na volné dny nelze plánovat.`, 'err'); return; }
     const rect = e.currentTarget.getBoundingClientRect();
-    let m = gridStart + (e.clientY - rect.top) / PPM;
+    let m = gridStart + ((e.clientX - rect.left) / rect.width) * span;
     m = Math.round(m / step) * step;
     m = Math.max(gridStart, Math.min(m, gridEnd - 30));
     const isTripDay = weekdayOf(date) === settings.trip_weekday;
@@ -132,7 +135,7 @@ export function SchedulePage({ params }) {
         <span class="field-label">Zobrazit</span>
         <select value=${filter} onChange=${(e) => setFilter(e.target.value)}>
           <option value="all">Celou školu</option>
-          ${readOnly ? (myGroupId && html`<option value=${'g:' + myGroupId}>Výjezdy mé skupiny</option>`) : html`<option value="mine">Jen moje</option>`}
+          ${readOnly ? (boot.students[0] && boot.students[0].group_id && html`<option value=${'g:' + boot.students[0].group_id}>Výjezdy mé skupiny</option>`) : html`<option value="mine">Jen moje</option>`}
           <optgroup label="Typ">
             <option value="k:lesson">Jen hodiny</option>
             <option value="k:trip">Jen výjezdy</option>
@@ -145,51 +148,49 @@ export function SchedulePage({ params }) {
       <div class="toolbar-spacer"></div>
       <button class="btn" onClick=${() => window.print()}>Tisk</button>
       ${!readOnly && html`<button class="btn" onClick=${() => setCopyOpen(true)}>Kopírovat týden…</button>
-      <button class="btn btn-primary" onClick=${() => setDialog({ preset: { date: days[Math.min(mDay, 4)], start: settings.day_start, kind: 'lesson' } })}>+ Přidat do rozvrhu</button>`}
+      <button class="btn btn-primary" onClick=${() => setDialog({ preset: { date: days[0], start: settings.day_start, kind: 'lesson' } })}>+ Přidat do rozvrhu</button>`}
     </div>
 
-    <div class="mday-tabs">
-      ${days.map((d, i) => html`<button class=${'mday' + (mDay === i ? ' on' : '') + (d === today() ? ' is-today' : '')} onClick=${() => setMDay(i)}>
-        <b>${DAYS_SHORT[i]}</b><span>${fmtDay(d)}</span></button>`)}
-    </div>
-
-    <div class=${'grid' + (loading ? ' is-loading' : '')} style=${`--ppm:${PPM}px`}>
-      <div class="grid-corner"></div>
-      ${days.map((d, i) => {
-        const hol = holidayOn(boot.holidays, d);
-        const trip = weekdayOf(d) === settings.trip_weekday;
-        const note = data.notes[d];
-        return html`<div class=${'day-head' + (d === today() ? ' is-today' : '') + (mDay === i ? ' m-on' : '')}>
-          <div class="day-name"><span>${DAYS[i]}</span><b>${fmtDay(d)}</b></div>
-          <div class="day-tags">
-            ${trip && !hol && html`<span class="tag tag-trip">Výjezdový den</span>`}
-            ${hol && html`<span class="tag tag-hol">${hol.name}</span>`}
+    <div class=${'tt-scroll' + (loading ? ' is-loading' : '')}>
+      <div class="tt" style=${`min-width:${TRACK_MIN_W + 150}px`}>
+        <div class="tt-head">
+          <div class="tt-corner">Den</div>
+          <div class="tt-ruler">
+            ${marks.map((m) => html`<span class=${'tt-tick' + (m % 60 === 0 ? ' is-h' : '')} style=${`left:${pct(m)}%`}>${m % 60 === 0 ? hm(m) : ''}</span>`)}
           </div>
-          ${note && html`<button class="day-note" disabled=${!atLeast(me, 'coordinator')} onClick=${() => setNoteDay(d)}>${note}</button>`}
-          ${!note && atLeast(me, 'coordinator') && html`<button class="day-note-add" onClick=${() => setNoteDay(d)}>+ poznámka ke dni</button>`}
-        </div>`;
-      })}
-
-      <div class="times" style=${`height:${height}px`}>
-        ${marks.map((m) => html`<div class=${'tm' + (m % 60 === 0 ? ' tm-h' : '')} style=${`top:${(m - gridStart) * PPM}px`}>${hm(m)}</div>`)}
+        </div>
+        ${days.map((d, i) => {
+          const hol = holidayOn(boot.holidays, d);
+          const trip = weekdayOf(d) === settings.trip_weekday;
+          const note = data.notes[d];
+          const laid = layoutDay(visible.filter((e) => e.date === d));
+          const lanesMax = laid.reduce((mx, x) => Math.max(mx, x.lanes), 1);
+          const rowH = lanesMax * LANE_H + 8;
+          return html`<div class=${'tt-row' + (d === today() ? ' is-today' : '') + (hol ? ' is-hol' : '')}>
+            <div class="tt-day">
+              <div class="tt-dn">${DAYS[i]}</div>
+              <div class="tt-dd">${fmtDay(d)}</div>
+              <div class="day-tags">
+                ${trip && !hol && html`<span class="tag tag-trip">Výjezd</span>`}
+                ${hol && html`<span class="tag tag-hol">${hol.name}</span>`}
+              </div>
+              ${note && html`<button class="day-note" disabled=${!atLeast(me, 'coordinator')} onClick=${() => setNoteDay(d)}>${note}</button>`}
+              ${!note && atLeast(me, 'coordinator') && html`<button class="day-note-add" onClick=${() => setNoteDay(d)}>+ poznámka</button>`}
+            </div>
+            <div class="tt-track" style=${`height:${rowH}px`} onClick=${(e) => clickDay(d, e)}>
+              ${marks.map((m) => html`<div class=${'tt-line' + (m % 60 === 0 ? ' is-h' : '')} style=${`left:${pct(m)}%`}></div>`)}
+              ${settings.circle_end > settings.circle_start && html`<div class="tt-band tt-circle" style=${`left:${pct(settings.circle_start)}%;width:${pct(settings.circle_end) - pct(settings.circle_start)}%`}><span>Ranní kruhy</span></div>`}
+              ${settings.lunch_end > settings.lunch_start && html`<div class="tt-band tt-lunch" style=${`left:${pct(settings.lunch_start)}%;width:${pct(settings.lunch_end) - pct(settings.lunch_start)}%`}><span>Oběd</span></div>`}
+              ${hol && html`<div class="tt-hol"><span>${hol.name}</span></div>`}
+              ${laid.map(({ ev, lane }) => html`<${EventBlock} ev=${ev} top=${lane * LANE_H + 4} left=${pct(ev.start)} width=${pct(ev.end) - pct(ev.start)}
+                  onOpen=${(e) => { e.stopPropagation(); setDialog({ ev }); }} />`)}
+              ${isThisWeek && d === today() && nm >= gridStart && nm <= gridEnd && html`<div class="tt-now" style=${`left:${pct(nm)}%`}><span>${hm(nm)}</span></div>`}
+            </div>
+          </div>`;
+        })}
       </div>
-      ${days.map((d, i) => {
-        const hol = holidayOn(boot.holidays, d);
-        const evs = visible.filter((e) => e.date === d);
-        const laid = layoutDay(evs);
-        const trip = weekdayOf(d) === settings.trip_weekday;
-        return html`<div class=${'day' + (hol ? ' is-hol' : '') + (trip ? ' is-trip' : '') + (mDay === i ? ' m-on' : '')} style=${`height:${height}px`} onClick=${(e) => clickDay(d, e)}>
-          ${marks.map((m) => html`<div class=${'line' + (m % 60 === 0 ? ' line-h' : '')} style=${`top:${(m - gridStart) * PPM}px`}></div>`)}
-          ${settings.circle_end > settings.circle_start && html`<div class="band band-circle" style=${`top:${(settings.circle_start - gridStart) * PPM}px;height:${(settings.circle_end - settings.circle_start) * PPM}px`}><span>Ranní kruhy</span></div>`}
-          ${settings.lunch_end > settings.lunch_start && html`<div class="band band-lunch" style=${`top:${(settings.lunch_start - gridStart) * PPM}px;height:${(settings.lunch_end - settings.lunch_start) * PPM}px`}><span>Oběd</span></div>`}
-          ${hol && html`<div class="hol-label"><span>${hol.name}</span></div>`}
-          ${laid.map(({ ev, lane, lanes }) => html`<${EventBlock} ev=${ev} lane=${lane} lanes=${lanes} top=${(ev.start - gridStart) * PPM}
-              onOpen=${(e) => { e.stopPropagation(); setDialog({ ev }); }} />`)}
-          ${isThisWeek && d === today() && nm >= gridStart && nm <= gridEnd && html`<div class="now" style=${`top:${(nm - gridStart) * PPM}px`}><span>${hm(nm)}</span></div>`}
-        </div>`;
-      })}
     </div>
-    <p class="grid-hint">${readOnly ? '' : 'Klikněte do prázdného místa v rozvrhu a přidáte hodinu na daný čas. '}${tripDayName ? `Výjezdový den: ${tripDayName}.` : ''}</p>
+    <p class="grid-hint">${readOnly ? '' : 'Klikněte do prázdného místa v řádku dne a přidáte hodinu na daný čas. Nejvýše pět hodin může běžet současně. '}${tripDayName ? `Výjezdový den: ${tripDayName}.` : ''}</p>
 
     ${dialog && html`<${EventDialog} ev=${dialog.ev} preset=${dialog.preset} onClose=${() => setDialog(null)} onSaved=${() => { setDialog(null); load(); }} />`}
     ${copyOpen && html`<${CopyWeekDialog} week=${week} onClose=${() => setCopyOpen(false)} onDone=${(target) => { setCopyOpen(false); go('rozvrh', { w: target }); }} />`}
@@ -197,25 +198,23 @@ export function SchedulePage({ params }) {
   </div>`;
 }
 
-function EventBlock({ ev, lane, lanes, top, onOpen }) {
+// One class on the horizontal time axis. Its vertical position is its lane.
+function EventBlock({ ev, top, left, width, onOpen }) {
   const { maps, me } = useApp();
   const color = eventColor(ev, maps);
-  const h = Math.max((ev.end - ev.start) * PPM - 3, 18);
-  const style = `top:${top + 1}px;height:${h}px;left:calc(${(lane / lanes) * 100}% + 3px);width:calc(${100 / lanes}% - 6px);` +
-    (color ? `--ev:${color};--ev-text:${inkText(color)};` : '');
   const owners = teachersOf(ev).map((id) => maps.users[id]).filter(Boolean);
   const room = ev.room_id && maps.rooms[ev.room_id];
   const groups = (ev.group_ids || []).map((id) => maps.groups[id]).filter(Boolean);
   const mine = teachersOf(ev).includes(me.id);
-  const compact = h < 40;
-  const roomy = h >= 66;
-  return html`<button class=${`ev ev-${ev.kind}` + (mine ? ' is-mine' : '') + (compact ? ' is-compact' : '')} style=${style} onClick=${onOpen}
-      title=${`${eventTitle(ev, maps)} · ${hm(ev.start)}–${hm(ev.end)}`}>
+  const short = ev.end - ev.start < 50;
+  const style = `top:${top}px;height:${LANE_H - 8}px;left:${left}%;width:${width}%;` +
+    (color ? `--ev:${color};--ev-text:${inkText(color)};` : '');
+  const meta = [owners.map((u) => u.short || u.name).join(', '), room ? room.name : (groups.length ? groups.map((g) => g.name).join(', ') : '')].filter(Boolean).join(' · ');
+  return html`<button class=${`ev ev-${ev.kind} tt-ev` + (mine ? ' is-mine' : '') + (short ? ' is-short' : '')} style=${style} onClick=${onOpen}
+      title=${`${eventTitle(ev, maps)} · ${hm(ev.start)}–${hm(ev.end)} · ${owners.map((u) => u.name).join(', ')}`}>
     <span class="ev-time">${hm(ev.start)}–${hm(ev.end)}</span>
-    <span class="ev-title">${eventTitle(ev, maps)}</span>
-    ${roomy && ev.kind === 'lesson' && ev.title && html`<span class="ev-topic">${ev.title}</span>`}
-    ${!compact && html`<span class="ev-meta">${owners.map((u) => u.short || u.name).join(', ')}${room ? ' · ' + room.name : ''}${ev.capacity ? ' · max ' + ev.capacity : ''}</span>`}
-    ${roomy && groups.length > 0 && html`<span class="ev-groups">${groups.map((g) => html`<span class="ev-g" style=${`background:${g.color}`}></span>`)}${groups.map((g) => g.name).join(', ')}</span>`}
+    <span class="ev-title">${ev.kind === 'trip' && html`<i class="ev-kind">výjezd</i>`}${eventTitle(ev, maps)}</span>
+    ${!short && html`<span class="ev-meta">${meta}</span>`}
   </button>`;
 }
 

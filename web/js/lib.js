@@ -21,7 +21,7 @@ export async function api(method, url, body, opts = {}) {
   try {
     res = await fetch(url, init);
   } catch {
-    throw new Error('Server neodpovídá. Běží Raven na školním počítači?');
+    throw new Error('Nepodařilo se spojit se serverem Raven. Zkontrolujte připojení k internetu, případně zkuste jinou síť, a stránku obnovte.');
   }
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }

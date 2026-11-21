@@ -356,6 +356,10 @@ func (a *App) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 			dates = append(dates, ds)
 		}
 	}
+	if msg := a.parallelLimit(dates, in.Event, nil); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
 	if !in.Force {
 		if c := a.findConflicts(dates, in.Event, nil); len(c) > 0 {
 			conflictResponse(w, c)
@@ -455,6 +459,10 @@ func (a *App) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		newDates[t.ID] = nd
 		dates = append(dates, nd)
 		exclude = append(exclude, t.ID)
+	}
+	if msg := a.parallelLimit(dates, in.Event, exclude); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
 	}
 	if !in.Force {
 		if c := a.findConflicts(dates, in.Event, exclude); len(c) > 0 {
@@ -614,4 +622,53 @@ func derefOr(p *int64, d int64) int64 {
 		return d
 	}
 	return *p
+}
+
+// maxParallel is the most classes that may run at the same time, on any day.
+const maxParallel = 5
+
+// parallelLimit returns a message when the new event would make more than maxParallel
+// classes run at once on one of the dates. Trips count as classes too.
+func (a *App) parallelLimit(dates []string, e Event, exclude []int64) string {
+	for _, d := range dates {
+		args := []any{d, e.End, e.Start}
+		q := `SELECT start_min,end_min FROM events WHERE deleted_at IS NULL AND date=? AND start_min<? AND end_min>?`
+		if len(exclude) > 0 {
+			q += ` AND id NOT IN (` + placeholders(len(exclude)) + `)`
+			for _, x := range exclude {
+				args = append(args, x)
+			}
+		}
+		rows, err := a.db.Query(q, args...)
+		if err != nil {
+			continue
+		}
+		type span struct{ from, to int }
+		spans := []span{{e.Start, e.End}}
+		for rows.Next() {
+			var from, to int
+			_ = rows.Scan(&from, &to)
+			spans = append(spans, span{from, to})
+		}
+		rows.Close()
+		// The count can only peak where a class starts, so check those moments inside the new class.
+		points := []int{e.Start}
+		for _, sp := range spans[1:] {
+			if sp.from >= e.Start && sp.from < e.End {
+				points = append(points, sp.from)
+			}
+		}
+		for _, p := range points {
+			n := 0
+			for _, sp := range spans {
+				if sp.from <= p && p < sp.to {
+					n++
+				}
+			}
+			if n > maxParallel {
+				return fmt.Sprintf("V %s v %s by běželo současně %d hodin. Nejvýše %d hodin může běžet současně.", czDate(d), hm(p), n, maxParallel)
+			}
+		}
+	}
+	return ""
 }
