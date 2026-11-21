@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Raven do telefonu</title>
+<meta name="theme-color" content="#121316">
+<link rel="icon" href="https://raven-kristators-projects.vercel.app/icons/icon-192.png">
+<link rel="apple-touch-icon" href="https://raven-kristators-projects.vercel.app/icons/apple-touch-icon.png">
+<style>
+  :root { --paper: #121316; --paper-hi: #1B1D21; --ink: #E9E6DD; --ink-2: #BAB6AB; --ink-3: #8A877E; --rule: #34373D; --gold: #F2B632; --green: #74C69D; }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; -webkit-text-size-adjust: 100%; }
+  main { max-width: 560px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 28px) 16px calc(env(safe-area-inset-bottom) + 40px); }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .brand img { width: 56px; height: 56px; border-radius: 13px; }
+  .brand b { font-size: 26px; letter-spacing: .16em; text-transform: uppercase; }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 8px; }
+  .lead { color: var(--ink-2); margin: 0 0 24px; }
+  section { border: 1px solid var(--rule); background: var(--paper-hi); padding: 18px; margin-bottom: 14px; }
+  section.on { border-color: var(--gold); }
+  h2 { font-size: 20px; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
+  .tag { font: 600 11px ui-monospace, Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; padding: 3px 7px; background: var(--gold); color: #121316; display: none; }
+  section.on .tag { display: inline-block; }
+  ol { margin: 10px 0 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .btn { display: block; text-align: center; padding: 14px 18px; font-weight: 700; font-size: 17px; text-decoration: none; background: var(--gold); color: #121316; margin-top: 12px; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--rule); }
+  .note { font-size: 14px; color: var(--ink-3); margin: 10px 0 0; }
+  .share { display: inline-block; vertical-align: -3px; width: 18px; height: 18px; }
+  footer { font-size: 14px; color: var(--ink-3); margin-top: 22px; }
+  a { color: var(--gold); }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><img src="https://raven-kristators-projects.vercel.app/icons/icon-192.png" alt=""><b>Raven</b></div>
+  <h1>Raven do telefonu</h1>
+  <p class="lead">Rozvrh, přihlašování na hodiny a tvoje cíle – v telefonu jako aplikace. Přihlásíš se svým školním účtem Google.</p>
+
+  <section id="android">
+    <h2>Android <span class="tag">tvůj telefon</span></h2>
+    <a class="btn" href="https://raven-kristators-projects.vercel.app/download/Raven.apk" download>Stáhnout aplikaci Raven</a>
+    <ol>
+      <li>Otevři stažený soubor <b>Raven.apk</b>.</li>
+      <li>Telefon se zeptá, jestli smí instalovat aplikace z prohlížeče – povol to.</li>
+      <li>Klepni na <b>Instalovat</b>. Pokud se objeví upozornění Google Play Protect, zvol <b>Podrobnosti → Přesto nainstalovat</b> (aplikace není z obchodu Google Play, proto ji telefon nezná).</li>
+    </ol>
+    <p class="note">Potřebuješ Android 5 nebo novější.</p>
+  </section>
+
+  <section id="iphone">
+    <h2>iPhone <span class="tag">tvůj telefon</span></h2>
+    <ol>
+      <li>Otevři <a href="https://raven-kristators-projects.vercel.app/">Raven</a> v prohlížeči <b>Safari</b>.</li>
+      <li>Klepni na tlačítko <b>Sdílet</b> <svg class="share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Sdílet"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v8h14v-8"/></svg> dole na obrazovce.</li>
+      <li>Vyber <b>Přidat na plochu</b> a potvrď <b>Přidat</b>.</li>
+      <li>Na ploše se objeví ikona Raven – otevírá se přes celou obrazovku jako aplikace.</li>
+    </ol>
+    <a class="btn ghost" href="https://raven-kristators-projects.vercel.app/">Otevřít Raven v Safari</a>
+  </section>
+
+  <section id="web">
+    <h2>V prohlížeči</h2>
+    <p style="margin:0">Raven funguje i bez instalace – stačí otevřít stránku v jakémkoli prohlížeči.</p>
+    <a class="btn ghost" href="https://raven-kristators-projects.vercel.app/">Otevřít Raven</a>
+  </section>
+
+  <footer>Verze pro telefon je určená žákům. Učitelé používají Raven na počítači.</footer>
+</main>
+<script>
+  // highlight the section for this phone and put it first
+  var ua = navigator.userAgent, id = /Android/i.test(ua) ? 'android' : /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iphone' : '';
+  if (id) { var el = document.getElementById(id); el.classList.add('on'); el.parentNode.insertBefore(el, document.getElementById('android')); }
+</script>
+</body>
+</html>

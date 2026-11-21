@@ -66,7 +66,7 @@ export function LoadView({ d, you, empty, hideWarn }) {
     ${total === 0 && prevTotal === 0 ? html`<${Empty}>${empty}<//>` : html`
       <div class="chart-card">
         <div class="chart-readout">${hv ? html`<i style=${`background:${hv.color}`}></i><b>${hv.name}</b> · tento týden ${fmtMinutes(hv.minutes) || '0 h'} (${pct(hv.minutes, total)}) · minulý ${fmtMinutes(hv.prev_minutes) || '0 h'}`
-          : html`<span class="muted">Najeď na předmět pro podrobnosti.</span>`}</div>
+          : html`<span class="muted">${matchMedia('(hover: none)').matches ? 'Klepni' : 'Najeď'} na předmět pro podrobnosti.</span>`}</div>
         ${mode === 'pie' && (shown.length ? html`<${Pie} rows=${shown} total=${total} hover=${hover} setHover=${setHover} />` : html`<p class="muted">Tento týden zatím žádné hodiny.</p>`)}
         ${mode === 'slope' && html`<${Slope} rows=${rows} hover=${hover} setHover=${setHover} />`}
         ${mode === 'radar' && html`<${Radar} rows=${rows} alerts=${alertBy} hover=${hover} setHover=${setHover} />`}

@@ -127,6 +127,14 @@ CREATE TABLE IF NOT EXISTS event_signups(
 	PRIMARY KEY(event_id, student_id)
 );
 CREATE INDEX IF NOT EXISTS event_signups_student ON event_signups(student_id);
+CREATE TABLE IF NOT EXISTS app_logins(
+	id TEXT PRIMARY KEY,
+	code TEXT NOT NULL,
+	secret_hash TEXT NOT NULL,
+	user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+	tries INTEGER NOT NULL DEFAULT 0,
+	expires_at BIGINT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS student_alerts(
 	student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
 	subject_id BIGINT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,

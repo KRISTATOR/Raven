@@ -10,7 +10,8 @@ import { AboutPage } from './about.js';
 import { AssistantPage } from './assistant.js';
 import { LoadPage } from './load.js';
 import { StudentCardPage } from './card.js';
-import { Mark, ThemeToggle } from './lib.js';
+import { PhoneShell, PhoneSchedule, useIsPhone } from './phone.js';
+import { Mark, ThemeToggle, NEEDS_BROWSER_LOGIN, IN_ANDROID_APP, openInBrowser } from './lib.js';
 
 function Wordmark({ small }) {
   return html`<span class=${'wordmark' + (small ? ' wordmark-s' : '')} aria-label="Raven"><${Mark} /><span>Raven</span></span>`;
@@ -26,7 +27,7 @@ function AuthFrame({ school, children }) {
       </div>
       ${children}
     </div>
-    <div class="auth-links"><span>rozvrh · konzultace · osobní cíle</span></div>
+    <div class="auth-links"><span>rozvrh · konzultace · osobní cíle</span>${!NEEDS_BROWSER_LOGIN && html`<a href="/stahnout.html">Raven do telefonu</a>`}</div>
     <${ThemeToggle} />
   </div>`;
 }
@@ -138,8 +139,11 @@ function Login({ school, googleClientId, onDone }) {
       </form>
     <//>`;
   }
+  if (googleClientId && NEEDS_BROWSER_LOGIN && !showPw) {
+    return html`<${AuthFrame} school=${school}><${AppLogin} onDone=${onDone} onPassword=${() => setShowPw(true)} /><//>`;
+  }
   return html`<${AuthFrame} school=${school}>
-    ${googleClientId && html`<div class="auth-form auth-google">
+    ${googleClientId && !NEEDS_BROWSER_LOGIN && html`<div class="auth-form auth-google">
       <p class="auth-lead">Přihlaste se školním účtem Google.</p>
       <${GoogleButton} clientId=${googleClientId} onCredential=${onGoogle} />
       ${!showPw && html`<${ErrorLine} error=${err} />`}
@@ -153,6 +157,78 @@ function Login({ school, googleClientId, onDone }) {
       <p class="auth-note">Zapomenuté heslo obnoví správce v sekci Správa → Uživatelé.</p>
     </form>`}
   <//>`;
+}
+
+// Phone app: sign in with Google in the phone's browser, confirmed by a short code.
+function AppLogin({ onDone, onPassword }) {
+  const [req, setReq] = useState(null);
+  const [err, setErr] = useState('');
+  const start = async () => {
+    setErr('');
+    try {
+      const r = await api('POST', '/api/auth/app/start', {}, { quiet: true });
+      setReq(r);
+      openInBrowser(`${location.origin}/#/aplikace?id=${r.id}`);
+    } catch (x) { setErr(x.message); }
+  };
+  useEffect(() => {
+    if (!req) return;
+    let stop = false;
+    const poll = async () => {
+      if (stop) return;
+      try {
+        const r = await api('POST', '/api/auth/app/poll', { id: req.id, secret: req.secret }, { quiet: true });
+        if (r.state === 'approved') { stop = true; onDone(); }
+      } catch (x) { stop = true; setReq(null); setErr(x.message + ' Zkus to prosím znovu.'); }
+    };
+    const t = setInterval(poll, 2500);
+    const wake = () => { if (!document.hidden) poll(); };
+    addEventListener('raven:resume', poll); document.addEventListener('visibilitychange', wake);
+    return () => { stop = true; clearInterval(t); removeEventListener('raven:resume', poll); document.removeEventListener('visibilitychange', wake); };
+  }, [req]);
+  if (!req) return html`<div class="auth-form app-login">
+    <p class="auth-lead">Přihlas se svým školním účtem Google. Otevře se prohlížeč v telefonu a pak se vrátíš sem.</p>
+    <button class="btn btn-primary btn-block btn-big" onClick=${start}>Přihlásit se přes Google</button>
+    <${ErrorLine} error=${err} />
+    <button type="button" class="btn btn-ghost btn-block" onClick=${onPassword}>Přihlásit se jménem a heslem</button>
+  </div>`;
+  return html`<div class="auth-form app-login">
+    <p class="auth-lead">V prohlížeči se přihlas přes Google a opiš tam tento kód:</p>
+    <div class="app-code" aria-label=${'Kód ' + req.code.split('').join(' ')}>${req.code.split('').map((c) => html`<span>${c}</span>`)}</div>
+    <p class="app-wait"><span class="spinner" aria-hidden="true"></span> Čekám na potvrzení z prohlížeče…</p>
+    <button class="btn btn-block" onClick=${() => openInBrowser(`${location.origin}/#/aplikace?id=${req.id}`)}>Otevřít prohlížeč znovu</button>
+    <button type="button" class="btn btn-ghost btn-block" onClick=${() => setReq(null)}>Zrušit</button>
+  </div>`;
+}
+
+// Browser side: the signed-in pupil confirms the app on their phone by typing its code.
+function AppApprovePage({ params }) {
+  const { me } = useAppCtx();
+  const [code, setCode] = useState('');
+  const [info, setInfo] = useState(null);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api('GET', `/api/auth/app/info?id=${encodeURIComponent(params.id || '')}`, undefined, { quiet: true }).then(setInfo).catch(() => setInfo({ state: 'expired' })); }, [params.id]);
+  const submit = async (e) => {
+    e.preventDefault(); setErr(''); setBusy(true);
+    try { await api('POST', '/api/auth/app/approve', { id: params.id, code }, { quiet: true }); setDone(true); } catch (x) { setErr(x.message); }
+    setBusy(false);
+  };
+  let body;
+  if (!info) body = html`<p>Načítám…</p>`;
+  else if (done || info.state === 'approved') body = html`<p class="approve-ok"><span aria-hidden="true">✓</span> Hotovo – aplikace Raven je přihlášená jako <b>${me.name}</b>.</p>
+      <p>Teď se vrať do aplikace Raven – přihlásí se sama. Tuto stránku můžeš zavřít.</p>
+      ${/Android/i.test(navigator.userAgent) && html`<a class="btn btn-primary btn-block btn-big" href="raven://open">Zpět do aplikace</a>`}`;
+  else if (info.state === 'expired') body = html`<p class="bad">Tato žádost o přihlášení vypršela nebo už byla použita. V aplikaci klepni znovu na „Přihlásit se přes Google“.</p>`;
+  else body = html`<form onSubmit=${submit}>
+      <p>Přihlašuješ aplikaci Raven na telefonu jako <b>${me.name}</b>. Opiš kód, který teď ukazuje aplikace:</p>
+      <input class="app-code-input" required autofocus maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" value=${code} onInput=${(e) => setCode(e.target.value.toUpperCase())} placeholder="KÓD" aria-label="Kód z aplikace" />
+      <${ErrorLine} error=${err} />
+      <button class="btn btn-primary btn-block btn-big" disabled=${busy || code.trim().length < 4}>Přihlásit aplikaci</button>
+      <p class="muted small">Kód opisuj jen z vlastního telefonu. Pokud jsi o přihlášení nežádal(a), stránku zavři.</p>
+    </form>`;
+  return html`<div class="page approve-page"><div class="approve-card"><div class="week-no">Přihlášení aplikace</div>${body}</div></div>`;
 }
 
 function PasswordDialog({ onClose, toast }) {
@@ -210,14 +286,27 @@ function Shell() {
     return () => ro.disconnect();
   }, []);
   const isStudent = me.role === 'student';
+  const isPhone = useIsPhone();
+  const phone = isStudent && isPhone;
+  // Teachers get the computer layout on phones too (for now): a wide viewport the phone zooms out.
+  useEffect(() => {
+    if (isStudent || Math.min(screen.width, screen.height) > 760) return;
+    const vp = document.querySelector('meta[name=viewport]');
+    const prev = vp.content;
+    vp.content = 'width=1280';
+    return () => { vp.content = prev; };
+  }, [isStudent]);
   const nav = isStudent ? [['rozvrh', 'Rozvrh'], ['rozlozeni', 'Rozložení hodin'], ['moje-cile', 'Moje cíle'], ['asistent', 'Asistent']] : NAV.filter(([, , role]) => !role || atLeast(me, role));
   let page;
-  if (route.path === 'o-nazvu') {
+  if (route.path === 'aplikace') {
+    page = html`<${AppApprovePage} params=${route.params} />`;
+  } else if (route.path === 'o-nazvu') {
     page = html`<${AboutPage} />`;
   } else if (route.path === 'asistent') {
     page = html`<${AssistantPage} />`;
   } else if (isStudent) {
-    page = route.path === 'moje-cile' ? html`<${MyGoalsPage} />` : route.path === 'rozlozeni' ? html`<${LoadPage} params=${route.params} />` : html`<${SchedulePage} params=${route.params} />`;
+    page = route.path === 'moje-cile' ? html`<${MyGoalsPage} />` : route.path === 'rozlozeni' ? html`<${LoadPage} params=${route.params} />`
+      : phone ? html`<${PhoneSchedule} params=${route.params} />` : html`<${SchedulePage} params=${route.params} />`;
   } else switch (route.path) {
     case 'rozvrh': page = html`<${SchedulePage} params=${route.params} />`; break;
     case 'konzultace': page = html`<${ConsultationsPage} params=${route.params} />`; break;
@@ -226,6 +315,19 @@ function Shell() {
     case 'zak': page = html`<${StudentCardPage} params=${route.params} />`; break;
     case 'sprava': page = atLeast(me, 'coordinator') ? html`<${AdminPage} params=${route.params} />` : html`<${Dashboard} />`; break;
     default: page = html`<${Dashboard} />`;
+  }
+  if (phone) {
+    return html`<${PhoneShell} route=${route} page=${page} menu=${menu} onMenu=${() => setMenu(!menu)} />
+      ${menu && html`<${Modal} title=${me.name} kicker=${ROLE_LABEL[me.role]} onClose=${() => setMenu(false)}>
+        <div class="psheet-menu">
+          ${me.email && html`<p class="muted small">${me.email}</p>`}
+          <div class="psheet-row"><span>Vzhled</span><${ThemeToggle} /></div>
+          ${me.has_password && html`<button class="btn btn-block" onClick=${() => { setMenu(false); setPw(true); }}>Změnit heslo</button>`}
+          <button class="btn btn-block" onClick=${() => { setMenu(false); go('o-nazvu'); }}>O názvu Raven</button>
+          <button class="btn btn-block btn-danger-ghost" onClick=${app.logout}>Odhlásit se</button>
+        </div>
+      <//>`}
+      ${pw && html`<${PasswordDialog} onClose=${() => setPw(false)} toast=${app.toast} />`}`;
   }
   return html`<div class="shell">
     <header class="top">
@@ -321,3 +423,6 @@ function App() {
 }
 
 render(html`<${App} />`, document.getElementById('app'));
+
+// installable as an app on phones (the worker caches nothing, see sw.js)
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});

@@ -339,7 +339,7 @@ function SignupList({ ev }) {
   </div>`;
 }
 
-function EventDetail({ ev, onClose, onRefresh }) {
+export function EventDetail({ ev, onClose, onRefresh }) {
   const { maps, me } = useApp();
   const subject = ev.subject_id && maps.subjects[ev.subject_id];
   const coTeacher = (ev.teacher_ids || []).includes(me.id);

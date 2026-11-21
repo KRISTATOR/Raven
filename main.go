@@ -8,6 +8,7 @@ import (
 	"html"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -274,6 +275,10 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /api/logout", a.handleLogout)
 	mux.HandleFunc("POST /api/auth/google", a.handleGoogleLogin)
 	mux.HandleFunc("POST /api/auth/gate", a.handleGate)
+	mux.HandleFunc("POST /api/auth/app/start", a.handleAppLoginStart)
+	mux.HandleFunc("POST /api/auth/app/poll", a.handleAppLoginPoll)
+	mux.HandleFunc("GET /api/auth/app/info", a.auth(S, a.handleAppLoginInfo))
+	mux.HandleFunc("POST /api/auth/app/approve", a.auth(S, a.handleAppLoginApprove))
 	mux.HandleFunc("POST /api/me/password", a.auth(S, a.handleChangePassword))
 	mux.HandleFunc("GET /api/bootstrap", a.auth(S, a.handleBootstrap))
 	mux.HandleFunc("GET /api/student/goals", a.auth(S, a.handleStudentGoals))
@@ -345,6 +350,8 @@ func (a *App) routes() http.Handler {
 		writeErr(w, http.StatusNotFound, "Neznámá adresa API.")
 	})
 
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+	_ = mime.AddExtensionType(".apk", "application/vnd.android.package-archive")
 	sub, _ := fs.Sub(webFS, "web")
 	files := http.FileServer(http.FS(sub))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

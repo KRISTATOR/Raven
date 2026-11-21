@@ -5,3 +5,5 @@ build/
 raven-data/
 raven-demo/
 .vercel/
+# private key that signs the Android app – never publish it
+mobile/android/signing/

@@ -4,6 +4,16 @@ export { html, render, useState, useEffect, useMemo, useRef, useCallback, useCon
 export const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
+// Inside the Android app (WebView) or an iPhone home-screen web app, Google's sign-in
+// cannot run, so those sign in through the phone's browser (see appauth.go).
+export const IN_ANDROID_APP = /RavenApp\/\d+ \(Android\)/.test(navigator.userAgent);
+export const IN_IOS_HOME_APP = window.navigator.standalone === true;
+export const NEEDS_BROWSER_LOGIN = IN_ANDROID_APP || IN_IOS_HOME_APP;
+export function openInBrowser(url) {
+  if (IN_ANDROID_APP) location.href = 'ravenext:' + url; // MainActivity hands it to the browser
+  else window.open(url, '_blank', 'noopener');
+}
+
 // ---------- API ----------
 export async function api(method, url, body, opts = {}) {
   const init = { method, headers: {}, credentials: 'same-origin' };
