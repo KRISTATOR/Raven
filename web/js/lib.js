@@ -44,6 +44,8 @@ export const today = () => iso(new Date());
 export const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 export const weekdayOf = (s) => ((parseISO(s).getDay() + 6) % 7) + 1; // 1 = Monday
 export const mondayOf = (s) => addDays(s, 1 - weekdayOf(s));
+// The school week to show by default: on Saturday and Sunday that is the coming one.
+export const schoolWeek = () => { const t = today(); return weekdayOf(t) >= 6 ? addDays(mondayOf(t), 7) : mondayOf(t); };
 export const daysBetween = (a, b) => Math.round((parseISO(b) - parseISO(a)) / 86400000);
 export function isoWeek(s) {
   const d = parseISO(s);

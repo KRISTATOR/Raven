@@ -1,7 +1,7 @@
 import {
   html, useState, useEffect, useMemo, useCallback, useRef, useApp, api, go, Modal, Field, ErrorLine, ChipToggle, Swatch,
   addDays, mondayOf, today, isoWeek, fmtDay, fmtDate, fmtLong, hm, toMin, timeVal, weekdayOf, nowMin, DAYS, DAYS_SHORT, MONTHS_GEN, parseISO,
-  holidayOn, atLeast, inkText, store, persist, TimeInput, useAsync,
+  holidayOn, atLeast, inkText, store, persist, TimeInput, useAsync, schoolWeek,
 } from './lib.js';
 
 const PPM = 1.45; // pixels per minute
@@ -55,7 +55,7 @@ const TRACK_MIN_W = 900; // minimum width of the time axis before the page scrol
 export function SchedulePage({ params }) {
   const app = useApp();
   const { me, maps, settings, boot } = app;
-  const week = mondayOf(params.w || today());
+  const week = params.w ? mondayOf(params.w) : schoolWeek();
   const days = [0, 1, 2, 3, 4].map((i) => addDays(week, i));
   const [data, setData] = useState({ events: [], notes: {} });
   const [loading, setLoading] = useState(true);
@@ -117,7 +117,7 @@ export function SchedulePage({ params }) {
   };
 
   const tripDayName = settings.trip_weekday ? DAYS[settings.trip_weekday - 1] : '';
-  const isThisWeek = week === mondayOf(today());
+  const isThisWeek = week === schoolWeek();
   const nm = nowMin();
 
   return html`<div class="schedule">
@@ -303,7 +303,7 @@ function SignupBox({ ev, onRefresh }) {
       onChange=${(e) => toggle(e.target.checked)} /> <b>Jdu na tuto hodinu</b></label>
     <span class="signup-count">${ev.capacity ? `Přihlášeno ${st.signups} z ${ev.capacity} míst` : `Přihlášeno ${st.signups}`}</span>
     ${full && html`<span class="bad">Hodina je plná – vyber si prosím jinou.</span>`}
-    ${past && html`<span class="muted">Hodina už proběhla.</span>`}
+    ${past && html`<span class="bad">Hodina už proběhla – přihlásit se dá jen na budoucí hodiny.</span>`}
     ${!linked && html`<span class="muted">Účet zatím není propojený se záznamem žáka – požádej tutora o doplnění e-mailu.</span>`}
   </div>`;
 }
