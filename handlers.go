@@ -206,6 +206,7 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.audit(currentUser(r).ID, "update", "settings", nil, "Změněno nastavení školy")
+	a.syncSchoolNames()
 	writeJSON(w, s)
 }
 
@@ -236,6 +237,19 @@ func (a *App) handleSaveUser(w http.ResponseWriter, r *http.Request) {
 	body.Email = strings.ToLower(strings.TrimSpace(body.Email))
 	if body.Username == "" {
 		body.Username = body.Email
+	}
+	if st := a.loadSettings(); st.NamesFromEmail && a.isSchoolAddress(st, body.Email) {
+		// school addresses decide the name; the typed name only lends its diacritics
+		var stored string
+		if id != 0 {
+			_ = a.db.QueryRow(`SELECT name FROM users WHERE id=?`, id).Scan(&stored)
+		}
+		if f, l, ok := schoolName(body.Email, a.trustedSpellings(body.Email, body.Name, stored)...); ok {
+			body.Name = strings.TrimSpace(f + " " + l)
+			if body.Short == "" {
+				body.Short = a.uniqueShort(f, l, body.Role, id)
+			}
+		}
 	}
 	if body.Username == "" || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "Vyplňte jméno a přihlašovací jméno.")
@@ -603,7 +617,9 @@ func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
 		seen[k] = true
 		out = append(out, b)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start || (out[i].Start == out[j].Start && out[i].End < out[j].End) })
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Start < out[j].Start || (out[i].Start == out[j].Start && out[i].End < out[j].End)
+	})
 	s := a.loadSettings()
 	s.Blocks = out
 	if err := a.saveSettings(s); dbErr(w, err) {

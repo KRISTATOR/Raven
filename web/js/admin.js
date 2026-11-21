@@ -108,6 +108,10 @@ function UserDialog({ u, onClose, onSaved }) {
   const [f, setF] = useState(() => u ? { ...u, password: '' } : { name: '', short: '', username: '', email: '', role: 'teacher', active: true, password: '' });
   const [err, setErr] = useState('');
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const st = app.settings;
+  const dom = (f.email || '').toLowerCase().split('@')[1] || '';
+  const inList = (list) => (list || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean).includes(dom);
+  const nameLocked = st.names_from_email && /^[^@]+\.[^@]+@/.test(f.email || '') && (inList(st.teacher_domains) || inList(st.student_domains));
   const save = async (e) => {
     e.preventDefault();
     try {
@@ -118,7 +122,7 @@ function UserDialog({ u, onClose, onSaved }) {
   };
   return html`<${Modal} title=${u ? 'Upravit účet' : 'Nový účet'} onClose=${onClose}>
     <form class="form-grid" onSubmit=${save}>
-      <${Field} label="Jméno a příjmení" wide><input required value=${f.name} onInput=${(e) => set('name', e.target.value)} /><//>
+      <${Field} label="Jméno a příjmení" hint=${nameLocked ? 'vezme se ze školního e-mailu (jmeno.prijmeni@…); zde lze jen doplnit diakritiku' : ''} wide><input required=${!nameLocked} value=${f.name} onInput=${(e) => set('name', e.target.value)} placeholder=${nameLocked ? 'doplní se z e-mailu' : ''} /><//>
       <${Field} label="Zkratka" hint="do rozvrhu, např. NOV" half><input maxlength="5" value=${f.short} onInput=${(e) => set('short', e.target.value)} /><//>
       <${Field} label="E-mail" hint="pro přihlášení přes Google" half><input type="email" value=${f.email || ''} onInput=${(e) => set('email', e.target.value)} /><//>
       <${Field} label="Přihlašovací jméno" hint="pro přihlášení heslem; prázdné = e-mail" wide><input value=${f.username} onInput=${(e) => set('username', e.target.value)} /><//>
@@ -230,6 +234,10 @@ function SettingsTab() {
         <${Field} label="Google Client ID" hint="z Google Cloud Console (končí .apps.googleusercontent.com); prázdné = jen přihlášení heslem" wide><input class="mono" value=${f.google_client_id || ''} onInput=${(e) => set('google_client_id', e.target.value)} /><//>
         <${Field} label="Domény učitelů" hint="oddělené čárkou" half><input value=${f.teacher_domains || ''} onInput=${(e) => set('teacher_domains', e.target.value)} placeholder="zsarcha.cz" /><//>
         <${Field} label="Domény žáků" hint="oddělené čárkou" half><input value=${f.student_domains || ''} onInput=${(e) => set('student_domains', e.target.value)} placeholder="montetrida.cz" /><//>
+        <div class="field field-wide">
+          <label class="check"><input type="checkbox" checked=${f.names_from_email} onChange=${(e) => set('names_from_email', e.target.checked)} /> <b>Jména podle školního e-mailu</b></label>
+          <span class="field-hint">U adres ze školních domén (jmeno.prijmeni@…) Raven vezme jméno a zkratku z adresy – ne z Google profilu, takže se nikdo nemůže vydávat za jiného. Diakritiku převezme z Google profilu nebo záznamu žáka jen tehdy, když písmena přesně odpovídají adrese. Po uložení se opraví i stávající účty.</span>
+        </div>
       </div>
       <${GateForm} />
     </section>

@@ -84,6 +84,9 @@ func main() {
 			fatal("Ukázková data: %v", err)
 		}
 	}
+	if n := app.syncSchoolNames(); n > 0 {
+		log.Printf("Jména podle školního e-mailu: opraveno %d účtů", n)
+	}
 	go app.backupLoop()
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
@@ -133,6 +136,9 @@ func runOnline(url string) {
 	if app.setupCode == "" {
 		app.setupCode = randToken(16) // never leave first-run setup open on the internet
 		log.Printf("SETUP_CODE není nastaven – vytvoření prvního účtu je zablokováno")
+	}
+	if n := app.syncSchoolNames(); n > 0 {
+		log.Printf("Jména podle školního e-mailu: opraveno %d účtů", n)
 	}
 	log.Printf("Raven online, port %s", port)
 	srv := &http.Server{Addr: ":" + port, Handler: app.routes(), ReadHeaderTimeout: 10 * time.Second}

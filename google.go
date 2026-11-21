@@ -129,12 +129,25 @@ func shortFromName(name string) string {
 func (a *App) ensureGoogleUser(email, name, role string) (int64, error) {
 	var id int64
 	var active int
-	err := a.db.QueryRow(`SELECT id,active FROM users WHERE lower(email)=?`, email).Scan(&id, &active)
+	var curName, curShort, curRole string
+	s := a.loadSettings()
+	fromEmail := s.NamesFromEmail && a.isSchoolAddress(s, email)
+	err := a.db.QueryRow(`SELECT id,active,name,COALESCE(short,''),role FROM users WHERE lower(email)=?`, email).Scan(&id, &active, &curName, &curShort, &curRole)
 	if err == nil {
 		if active == 0 {
 			return 0, fmt.Errorf("Tento účet je deaktivovaný. Obraťte se na správce.")
 		}
+		if fromEmail { // the address decides the name, every time
+			a.applySchoolName(id, email, curName, curShort, curRole, name)
+		}
 		return id, nil
+	}
+	short := shortFromName(name)
+	if fromEmail {
+		if f, l, ok := schoolName(email, a.trustedSpellings(email, name)...); ok {
+			name = strings.TrimSpace(f + " " + l)
+			short = a.uniqueShort(f, l, role, 0)
+		}
 	}
 	username := email
 	var n int
@@ -143,7 +156,7 @@ func (a *App) ensureGoogleUser(email, name, role string) (int64, error) {
 		username = email + "#" + randToken(3)
 	}
 	id, err = a.db.InsertID(`INSERT INTO users(username,name,short,role,password_hash,active,email) VALUES(?,?,?,?,'',1,?)`,
-		username, name, shortFromName(name), role, email)
+		username, name, short, role, email)
 	if err != nil {
 		return 0, err
 	}

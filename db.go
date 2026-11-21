@@ -359,6 +359,8 @@ type Settings struct {
 	// Personal assistant on/off per audience (the API key is stored separately, encrypted).
 	AIStudents bool `json:"ai_students"`
 	AITeachers bool `json:"ai_teachers"`
+	// School addresses are jmeno.prijmeni@…: take names from them, not from Google profiles.
+	NamesFromEmail bool `json:"names_from_email"`
 	// Time blocks ("bloky hodin") to pick from when planning, set by coordinators and admins.
 	Blocks []TimeBlock `json:"blocks"`
 }
@@ -396,6 +398,7 @@ func defaultSettings() Settings {
 		StudentDomains: "montetrida.cz",
 		AIStudents:     true,
 		AITeachers:     true,
+		NamesFromEmail: true,
 	}
 }
 
