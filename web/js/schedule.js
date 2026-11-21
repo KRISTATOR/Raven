@@ -49,6 +49,7 @@ function weekTitle(mon) {
 }
 
 const LANE_H = 60;      // height of one lane (one class running at that time)
+const MIN_LANES = 3;    // every day shows three lanes; a fourth and fifth appear only when needed
 const TRACK_MIN_W = 900; // minimum width of the time axis before the page scrolls sideways
 
 export function SchedulePage({ params }) {
@@ -151,12 +152,12 @@ export function SchedulePage({ params }) {
       <button class="btn btn-primary" onClick=${() => setDialog({ preset: { date: days[0], start: settings.day_start, kind: 'lesson' } })}>+ Přidat do rozvrhu</button>`}
     </div>
 
-    <div class=${'tt-scroll' + (loading ? ' is-loading' : '')}>
+    <div class=${'tt-scroll' + (loading ? ' is-loading' : '') + (readOnly ? ' is-readonly' : '')}>
       <div class="tt" style=${`min-width:${TRACK_MIN_W + 150}px`}>
         <div class="tt-head">
           <div class="tt-corner">Den</div>
           <div class="tt-ruler">
-            ${marks.map((m) => html`<span class=${'tt-tick' + (m % 60 === 0 ? ' is-h' : '')} style=${`left:${pct(m)}%`}>${m % 60 === 0 ? hm(m) : ''}</span>`)}
+            ${marks.map((m) => html`<span class=${'tt-tick' + (m % 60 === 0 ? ' is-h' : '')} style=${`left:${pct(m)}%`}>${m % 60 === 0 && m < gridEnd ? hm(m) : ''}</span>`)}
           </div>
         </div>
         ${days.map((d, i) => {
@@ -165,7 +166,7 @@ export function SchedulePage({ params }) {
           const note = data.notes[d];
           const laid = layoutDay(visible.filter((e) => e.date === d));
           const lanesMax = laid.reduce((mx, x) => Math.max(mx, x.lanes), 1);
-          const rowH = lanesMax * LANE_H + 8;
+          const rowH = Math.max(MIN_LANES, lanesMax) * LANE_H + 8;
           return html`<div class=${'tt-row' + (d === today() ? ' is-today' : '') + (hol ? ' is-hol' : '')}>
             <div class="tt-day">
               <div class="tt-dn">${DAYS[i]}</div>
