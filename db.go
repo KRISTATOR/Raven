@@ -359,6 +359,24 @@ type Settings struct {
 	// Personal assistant on/off per audience (the API key is stored separately, encrypted).
 	AIStudents bool `json:"ai_students"`
 	AITeachers bool `json:"ai_teachers"`
+	// Time blocks ("bloky hodin") to pick from when planning, set by coordinators and admins.
+	Blocks []TimeBlock `json:"blocks"`
+}
+
+type TimeBlock struct {
+	Name  string `json:"name"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+// blockFor says whether start–end is exactly one of the school's time blocks.
+func (s Settings) blockFor(start, end int) bool {
+	for _, b := range s.Blocks {
+		if b.Start == start && b.End == end {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultSettings() Settings {
@@ -392,6 +410,9 @@ func (a *App) loadSettings() Settings {
 	}
 	if s.SlotStep <= 0 {
 		s.SlotStep = 5
+	}
+	if s.Blocks == nil {
+		s.Blocks = []TimeBlock{}
 	}
 	return s
 }

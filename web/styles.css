@@ -882,3 +882,14 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
   .af-grid { grid-template-columns: minmax(110px, 1fr) 76px 76px; }
 }
 @media print { .switch, .alert-pill { display: none; } }
+
+/* ---------- time blocks ---------- */
+.blocks-grid { display: grid; grid-template-columns: minmax(140px, 1fr) 110px 110px 70px 40px; gap: 6px 10px; align-items: center; max-width: 620px; margin-bottom: 8px; }
+.block-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.block-pick { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 10px; background: var(--paper-hi); border: 1px solid var(--rule-soft); color: var(--ink); cursor: pointer; text-align: left; }
+.block-pick b { font-size: 13.5px; font-weight: 600; }
+.block-pick span { font: 12px var(--mono); color: var(--ink-2); }
+.block-pick:hover { border-color: var(--ink-3); }
+.block-pick.on { background: var(--yellow); border-color: var(--yellow); color: var(--on-gold); }
+.block-pick.on span { color: var(--on-gold); }
+@media (max-width: 760px) { .blocks-grid { grid-template-columns: 1fr 84px 84px 36px; } .blocks-grid > .mono, .blocks-grid > .field-label:nth-child(4) { display: none; } }

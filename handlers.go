@@ -198,6 +198,7 @@ func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		s.SlotStep = 5
 	}
 	s.SchoolName = strings.TrimSpace(s.SchoolName)
+	s.Blocks = a.loadSettings().Blocks // edited only through /api/settings/blocks
 	s.GoogleClientID = strings.TrimSpace(s.GoogleClientID)
 	s.TeacherDomains = normDomains(s.TeacherDomains)
 	s.StudentDomains = normDomains(s.StudentDomains)
@@ -570,4 +571,44 @@ func (a *App) handleSaveDayNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+// ---------- time blocks ----------
+
+func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
+	var in []TimeBlock
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if len(in) > 30 {
+		writeErr(w, http.StatusBadRequest, "Nejvýše 30 bloků.")
+		return
+	}
+	out := []TimeBlock{}
+	seen := map[[2]int]bool{}
+	for i, b := range in {
+		b.Name = strings.TrimSpace(b.Name)
+		if len([]rune(b.Name)) > 40 {
+			writeErr(w, http.StatusBadRequest, "Název bloku může mít nejvýše 40 znaků.")
+			return
+		}
+		if b.Start < 0 || b.End > 24*60 || b.End <= b.Start {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("Blok č. %d: konec musí být po začátku.", i+1))
+			return
+		}
+		k := [2]int{b.Start, b.End}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, b)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Start < out[j].Start || (out[i].Start == out[j].Start && out[i].End < out[j].End) })
+	s := a.loadSettings()
+	s.Blocks = out
+	if err := a.saveSettings(s); dbErr(w, err) {
+		return
+	}
+	a.audit(currentUser(r).ID, "update", "settings", nil, fmt.Sprintf("Upraveny bloky hodin (%d)", len(out)))
+	writeJSON(w, out)
 }

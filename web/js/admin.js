@@ -7,6 +7,7 @@ const TABS = [
   ['ucty', 'Uživatelé', 'admin'],
   ['nastaveni', 'Nastavení školy', 'admin'],
   ['volno', 'Volné dny', 'admin'],
+  ['bloky', 'Bloky hodin', 'coordinator'],
   ['predmety', 'Předměty a místnosti', 'coordinator'],
   ['historie', 'Historie změn', 'coordinator'],
   ['zaloha', 'Zálohy', 'admin'],
@@ -21,6 +22,7 @@ export function AdminPage({ params }) {
     case 'ucty': body = html`<${UsersTab} />`; break;
     case 'nastaveni': body = html`<${SettingsTab} />`; break;
     case 'volno': body = html`<${HolidaysTab} />`; break;
+    case 'bloky': body = html`<${BlocksTab} />`; break;
     case 'predmety': body = html`<${SubjectsTab} />`; break;
     case 'historie': body = html`<${HistoryTab} />`; break;
     case 'zaloha': body = html`<${BackupTab} />`; break;
@@ -30,6 +32,51 @@ export function AdminPage({ params }) {
     <div class="tabs">${tabs.map(([k, label]) => html`<a href=${'#/sprava?tab=' + k} class=${'tab' + (k === tab ? ' on' : '')}>${label}</a>`)}</div>
     ${body}
   </div>`;
+}
+
+// ---------- time blocks: ready-made class times to pick from when planning ----------
+function BlocksTab() {
+  const app = useApp();
+  const [rows, setRows] = useState(() => app.settings.blocks.map((b) => ({ ...b })));
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const add = () => {
+    const last = rows[rows.length - 1];
+    const start = last ? last.end + 10 : app.settings.day_start;
+    setRows([...rows, { name: '', start, end: Math.min(start + 45, 24 * 60 - 5) }]);
+  };
+  const save = async (e) => {
+    e.preventDefault(); setErr('');
+    for (const [i, r] of rows.entries()) if (!(r.end > r.start)) { setErr(`Blok č. ${i + 1}: konec musí být po začátku.`); return; }
+    setBusy(true);
+    try {
+      const out = await api('PUT', '/api/settings/blocks', rows.map((r) => ({ name: r.name, start: Number(r.start), end: Number(r.end) })));
+      setRows(out.map((b) => ({ ...b }))); app.toast('Bloky hodin uloženy.'); app.reloadBoot();
+    } catch (x) { setErr(x.message); }
+    setBusy(false);
+  };
+  return html`<section class="section">
+    <div class="section-head"><h2>Bloky hodin <span class="count">${rows.length}</span></h2></div>
+    <p class="muted">Pevné časy hodin, ze kterých si vyučující při plánování jen vyberou – nemusí pokaždé psát začátek a konec. Blok platí i tehdy, když jeho délka není mezi povolenými délkami. Upravovat je může koordinátor a správce.</p>
+    <form onSubmit=${save}>
+      ${rows.length === 0 ? html`<${Empty}>Zatím žádné bloky. Přidejte první tlačítkem níže.<//>` : html`
+      <div class="blocks-grid">
+        <span class="field-label">Název <em>nepovinné</em></span><span class="field-label">Začátek</span><span class="field-label">Konec</span><span class="field-label">Délka</span><span></span>
+        ${rows.map((r, i) => html`
+          <input value=${r.name} maxlength="40" placeholder=${(i + 1) + '. blok'} onInput=${(e) => set(i, 'name', e.target.value)} aria-label=${'Název bloku ' + (i + 1)} />
+          <${TimeInput} value=${r.start} onChange=${(v) => v != null && set(i, 'start', v)} />
+          <${TimeInput} value=${r.end} onChange=${(v) => v != null && set(i, 'end', v)} />
+          <span class=${'mono small' + (r.end > r.start ? '' : ' bad')}>${r.end > r.start ? (r.end - r.start) + ' min' : '—'}</span>
+          <button type="button" class="btn btn-sq" title="Odebrat blok" onClick=${() => setRows(rows.filter((_, j) => j !== i))}>×</button>`)}
+      </div>`}
+      <${ErrorLine} error=${err} />
+      <div class="form-actions">
+        <button type="button" class="btn" onClick=${add}>+ Přidat blok</button>
+        <button class="btn btn-primary" disabled=${busy}>Uložit bloky</button>
+      </div>
+    </form>
+  </section>`;
 }
 
 // ---------- users ----------

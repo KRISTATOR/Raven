@@ -401,7 +401,12 @@ function EventForm({ ev, preset, onClose, onSaved }) {
   const isLesson = f.kind === 'lesson';
   const end = isLesson ? f.start + Number(f.len) : f.end;
   const hol = holidayOn(boot.holidays, f.date);
-  const lenOptions = [...new Set([...lengths, ...(ev && isLesson ? [ev.end - ev.start] : [])])].sort((a, b) => a - b);
+  const blocks = settings.blocks || [];
+  const lenOptions = [...new Set([...lengths, ...blocks.map((b) => b.end - b.start), ...(ev && isLesson ? [ev.end - ev.start] : [])])].sort((a, b) => a - b);
+  const pickBlock = (b) => {
+    setCustomLen(false);
+    setF((x) => ({ ...x, start: b.start, len: b.end - b.start, end: b.end }));
+  };
 
   const payload = (force) => ({
     kind: f.kind, date: f.date, start: Number(f.start), end: Number(end),
@@ -467,6 +472,14 @@ function EventForm({ ev, preset, onClose, onSaved }) {
         <input value=${f.title} onInput=${(e) => set('title', e.target.value)} placeholder=${f.kind === 'trip' ? 'např. Školní farma, Národní galerie…' : 'např. Projektový den'} required />
       <//>`}
 
+      ${blocks.length > 0 && html`<div class="field field-wide">
+        <span class="field-label">Blok <em>vyplní začátek i konec</em></span>
+        <div class="block-picks">${blocks.map((b, i) => {
+          const on = Number(f.start) === b.start && end === b.end;
+          return html`<button type="button" class=${'block-pick' + (on ? ' on' : '')} aria-pressed=${on} onClick=${() => pickBlock(b)}>
+            <b>${b.name || (i + 1) + '. blok'}</b><span>${hm(b.start)}–${hm(b.end)}</span></button>`;
+        })}</div>
+      </div>`}
       <${Field} label="Datum" half><input type="date" required value=${f.date} onChange=${(e) => e.target.value && set('date', e.target.value)} /><//>
       <${Field} label=${f.kind === 'trip' ? 'Odjezd' : 'Začátek'} half><${TimeInput} required value=${f.start} onChange=${(v) => v != null && set('start', v)} /><//>
       ${isLesson && !customLen && html`<${Field} label="Délka" hint=${'konec v ' + hm(end)} half>
