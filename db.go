@@ -120,6 +120,13 @@ CREATE TABLE IF NOT EXISTS event_groups(
 	group_id BIGINT NOT NULL REFERENCES tutor_groups(id) ON DELETE CASCADE,
 	PRIMARY KEY(event_id, group_id)
 );
+CREATE TABLE IF NOT EXISTS event_signups(
+	event_id BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+	student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+	created_at TEXT NOT NULL DEFAULT {{NOW}},
+	PRIMARY KEY(event_id, student_id)
+);
+CREATE INDEX IF NOT EXISTS event_signups_student ON event_signups(student_id);
 CREATE TABLE IF NOT EXISTS consultations(
 	id {{ID}},
 	date TEXT NOT NULL,

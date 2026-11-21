@@ -1,7 +1,7 @@
 import {
   html, useState, useEffect, useMemo, useCallback, useRef, useApp, api, go, Modal, Field, ErrorLine, ChipToggle, Swatch,
   addDays, mondayOf, today, isoWeek, fmtDay, fmtDate, fmtLong, hm, toMin, timeVal, weekdayOf, nowMin, DAYS, DAYS_SHORT, MONTHS_GEN, parseISO,
-  holidayOn, atLeast, inkText, store, persist, TimeInput,
+  holidayOn, atLeast, inkText, store, persist, TimeInput, useAsync,
 } from './lib.js';
 
 const PPM = 1.45; // pixels per minute
@@ -32,7 +32,7 @@ function layoutDay(evs) {
 
 export function eventTitle(ev, maps) {
   const s = ev.subject_id && maps.subjects[ev.subject_id];
-  if (ev.kind === 'lesson') return s ? s.name : ev.title || 'Hodina';
+  if (ev.kind === 'lesson') return ev.title || (s ? s.name : 'Hodina');
   return ev.title || KIND_LABEL[ev.kind];
 }
 export function eventColor(ev, maps) {
@@ -193,7 +193,7 @@ export function SchedulePage({ params }) {
     </div>
     <p class="grid-hint">${readOnly ? '' : 'Klikněte do prázdného místa v řádku dne a přidáte hodinu na daný čas. Nejvýše pět hodin může běžet současně. '}${tripDayName ? `Výjezdový den: ${tripDayName}.` : ''}</p>
 
-    ${dialog && html`<${EventDialog} ev=${dialog.ev} preset=${dialog.preset} onClose=${() => setDialog(null)} onSaved=${() => { setDialog(null); load(); }} />`}
+    ${dialog && html`<${EventDialog} ev=${dialog.ev} preset=${dialog.preset} onClose=${() => setDialog(null)} onSaved=${() => { setDialog(null); load(); }} onRefresh=${load} />`}
     ${copyOpen && html`<${CopyWeekDialog} week=${week} onClose=${() => setCopyOpen(false)} onDone=${(target) => { setCopyOpen(false); go('rozvrh', { w: target }); }} />`}
     ${noteDay && html`<${DayNoteDialog} date=${noteDay} text=${data.notes[noteDay] || ''} onClose=${() => setNoteDay(null)} onSaved=${() => { setNoteDay(null); load(); }} />`}
   </div>`;
@@ -213,6 +213,10 @@ function EventBlock({ ev, top, left, width, onOpen }) {
   const meta = [owners.map((u) => u.short || u.name).join(', '), room ? room.name : (groups.length ? groups.map((g) => g.name).join(', ') : '')].filter(Boolean).join(' · ');
   return html`<button class=${`ev ev-${ev.kind} tt-ev` + (mine ? ' is-mine' : '') + (short ? ' is-short' : '')} style=${style} onClick=${onOpen}
       title=${`${eventTitle(ev, maps)} · ${hm(ev.start)}–${hm(ev.end)} · ${owners.map((u) => u.name).join(', ')}`}>
+    ${me.role === 'student'
+      ? (ev.signed ? html`<span class="ev-badge ev-check" title="Jdeš na tuto hodinu">✓</span>`
+        : (ev.capacity && ev.signups >= ev.capacity && ev.kind !== 'trip' && html`<span class="ev-badge ev-full">plno</span>`))
+      : ((ev.signups > 0 || ev.capacity) && ev.kind !== 'trip' && html`<span class=${'ev-badge ev-count' + (ev.capacity && ev.signups >= ev.capacity ? ' is-full' : '')} title="Přihlášení žáci">${ev.signups}${ev.capacity ? '/' + ev.capacity : ''}</span>`)}
     <span class="ev-time">${hm(ev.start)}–${hm(ev.end)}</span>
     <span class="ev-title">${ev.kind === 'trip' && html`<i class="ev-kind">výjezd</i>`}${eventTitle(ev, maps)}</span>
     ${!short && html`<span class="ev-meta">${meta}</span>`}
@@ -271,8 +275,52 @@ function CopyWeekDialog({ week, onClose, onDone }) {
   <//>`;
 }
 
-function EventDetail({ ev, onClose }) {
+function SignupBox({ ev, onRefresh }) {
+  const { toast, boot } = useApp();
+  const [st, setSt] = useState({ signed: !!ev.signed, signups: ev.signups || 0 });
+  const [busy, setBusy] = useState(false);
+  if (ev.kind === 'trip') return html`<p class="muted">Na výjezd se nepřihlašuje – jede celá tutorská skupina.</p>`;
+  const linked = boot.students.length > 0;
+  const past = ev.date < today();
+  const full = !!ev.capacity && st.signups >= ev.capacity && !st.signed;
+  const toggle = async (going) => {
+    const before = st;
+    setSt({ signed: going, signups: st.signups + (going ? 1 : -1) }); // tick at once, undo if refused
+    setBusy(true);
+    try {
+      const r = await api('POST', `/api/events/${ev.id}/signup`, { going });
+      setSt({ signed: r.signed, signups: r.signups });
+      toast(going ? 'Zapsáno – jdeš na tuto hodinu.' : 'Odhlášeno z hodiny.');
+      onRefresh && onRefresh();
+    } catch (e) { setSt(before); toast(e.message, 'err'); }
+    setBusy(false);
+  };
+  return html`<div class=${'signup' + (st.signed ? ' is-on' : '')}>
+    <label class="check"><input type="checkbox" checked=${st.signed} disabled=${busy || past || !linked || full}
+      onChange=${(e) => toggle(e.target.checked)} /> <b>Jdu na tuto hodinu</b></label>
+    <span class="signup-count">${ev.capacity ? `Přihlášeno ${st.signups} z ${ev.capacity} míst` : `Přihlášeno ${st.signups}`}</span>
+    ${full && html`<span class="bad">Hodina je plná – vyber si prosím jinou.</span>`}
+    ${past && html`<span class="muted">Hodina už proběhla.</span>`}
+    ${!linked && html`<span class="muted">Účet zatím není propojený se záznamem žáka – požádej tutora o doplnění e-mailu.</span>`}
+  </div>`;
+}
+
+function SignupList({ ev }) {
+  const [st] = useAsync(() => api('GET', `/api/events/${ev.id}/signups`, undefined, { quiet: true }), [ev.id]);
+  if (st.error || ev.kind === 'trip') return null;
+  const list = st.data ? st.data.signups : [];
+  return html`<div class="field field-wide signup-list">
+    <span class="field-label">Přihlášení žáci <em>${list.length}${ev.capacity ? ' z ' + ev.capacity : ''}</em></span>
+    ${st.loading ? html`<span class="muted small">Načítám…</span>`
+      : list.length === 0 ? html`<span class="muted small">Zatím se nikdo nepřihlásil.</span>`
+      : html`<ol class="signup-names">${list.map((x) => html`<li>${x.name} <span class="muted">${x.grade}.${x.group ? ' · ' + x.group : ''}</span></li>`)}</ol>`}
+  </div>`;
+}
+
+function EventDetail({ ev, onClose, onRefresh }) {
   const { maps, me } = useApp();
+  const subject = ev.subject_id && maps.subjects[ev.subject_id];
+  const coTeacher = (ev.teacher_ids || []).includes(me.id);
   const owner = maps.users[ev.owner_id];
   const extra = (ev.teacher_ids || []).map((id) => maps.users[id]).filter(Boolean);
   const room = ev.room_id && maps.rooms[ev.room_id];
@@ -281,7 +329,7 @@ function EventDetail({ ev, onClose }) {
   return html`<${Modal} title=${eventTitle(ev, maps)} kicker=${KIND_LABEL[ev.kind] + ' · ' + fmtLong(ev.date) + ' · ' + hm(ev.start) + '–' + hm(ev.end)} onClose=${onClose}>
     ${color && html`<div class="detail-ink" style=${`background:${color}`}></div>`}
     <dl class="detail">
-      ${ev.kind === 'lesson' && ev.title && html`<dt>Téma</dt><dd>${ev.title}</dd>`}
+      ${subject && html`<dt>Předmět</dt><dd>${subject.name}</dd>`}
       <dt>${ev.kind === 'trip' ? 'Vede' : 'Vyučuje'}</dt><dd>${owner ? owner.name : '—'}</dd>
       ${extra.length > 0 && html`<dt>${ev.kind === 'trip' ? 'Doprovod' : 'Spolu s'}</dt><dd>${extra.map((u) => u.name).join(', ')}</dd>`}
       ${room && html`<dt>Místnost</dt><dd>${room.name}</dd>`}
@@ -290,6 +338,8 @@ function EventDetail({ ev, onClose }) {
       ${ev.note && html`<dt>Poznámka</dt><dd class="pre">${ev.note}</dd>`}
       ${ev.series_id && html`<dt>Opakování</dt><dd>Součást týdenní řady</dd>`}
     </dl>
+    ${me.role === 'student' && html`<${SignupBox} ev=${ev} onRefresh=${onRefresh} />`}
+    ${coTeacher && html`<${SignupList} ev=${ev} />`}
     ${me.role !== 'student' && html`<p class="muted">Upravit může jen ${owner ? owner.name : 'vyučující'}, koordinátor nebo správce.</p>`}
   <//>`;
 }
@@ -298,7 +348,7 @@ function EventDialog(props) {
   const { me } = useApp();
   const { ev } = props;
   const canEdit = !ev || atLeast(me, 'coordinator') || ev.owner_id === me.id;
-  if (!canEdit) return html`<${EventDetail} ev=${ev} onClose=${props.onClose} />`;
+  if (!canEdit) return html`<${EventDetail} ev=${ev} onClose=${props.onClose} onRefresh=${props.onRefresh} />`;
   return html`<${EventForm} ...${props} />`;
 }
 
@@ -390,7 +440,7 @@ function EventForm({ ev, preset, onClose, onSaved }) {
             ${boot.subjects.map((s) => html`<option value=${s.id}>${s.name}</option>`)}
           </select>
         <//>
-        <${Field} label="Téma / název" hint="nepovinné" half><input value=${f.title} onInput=${(e) => set('title', e.target.value)} placeholder="např. Lineární rovnice" /><//>`}
+        <${Field} label="Název hodiny" hint="zobrazí se v rozvrhu; prázdné = název předmětu" half><input value=${f.title} onInput=${(e) => set('title', e.target.value)} placeholder="např. Lineární rovnice" /><//>`}
       ${!isLesson && html`<${Field} label=${f.kind === 'trip' ? 'Cíl výjezdu' : 'Název akce'} wide>
         <input value=${f.title} onInput=${(e) => set('title', e.target.value)} placeholder=${f.kind === 'trip' ? 'např. Školní farma, Národní galerie…' : 'např. Projektový den'} required />
       <//>`}
@@ -435,6 +485,7 @@ function EventForm({ ev, preset, onClose, onSaved }) {
           render=${(u) => u.short || u.name} />
       </div>
       ${isLesson && html`<${Field} label="Kapacita" hint="max. počet žáků, nepovinné" half><input type="number" min="1" max="200" value=${f.capacity} onInput=${(e) => set('capacity', e.target.value)} /><//>`}
+      ${ev && ev.kind !== 'trip' && html`<${SignupList} ev=${ev} />`}
       <${Field} label="Poznámka" wide><textarea rows="2" value=${f.note} onInput=${(e) => set('note', e.target.value)} placeholder=${f.kind === 'trip' ? 'Sraz, co s sebou, oběd…' : ''}></textarea><//>
 
       ${!ev && html`<div class="field field-wide repeat">

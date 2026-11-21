@@ -55,7 +55,7 @@ export function Dashboard() {
           return html`<li class=${'agenda-item ag-' + e.kind}>
             <span class="ag-time mono">${hm(e.start)}<br /><span class="muted">${hm(e.end)}</span></span>
             <span class="ag-bar" style=${c ? `background:${c}` : ''}></span>
-            <span class="ag-body"><span><b>${eventTitle(e, maps)}</b>${e.kind === 'lesson' && e.title ? ` – ${e.title}` : ''}</span>
+            <span class="ag-body"><span><b>${eventTitle(e, maps)}</b>${e.kind === 'lesson' && e.title && e.subject_id && maps.subjects[e.subject_id] ? html` <span class="muted">· ${maps.subjects[e.subject_id].name}</span>` : ''}</span>
               <span class="muted small">${[room?.name, groups.join(', '), e.owner_id !== me.id ? 'vede ' + maps.users[e.owner_id]?.name : ''].filter(Boolean).join(' · ')}</span></span>
           </li>`;
         })}</ol>`}

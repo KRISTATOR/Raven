@@ -23,6 +23,8 @@ type Event struct {
 	Capacity   *int    `json:"capacity"`
 	Note       string  `json:"note"`
 	SeriesID   string  `json:"series_id"`
+	Signups    int     `json:"signups"`          // pupils signed up for this class
+	Signed     bool    `json:"signed,omitempty"` // the signed-in pupil is going
 }
 
 type eventInput struct {
@@ -139,6 +141,7 @@ func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	a.attachRelations(evs)
+	a.attachSignups(evs, currentUser(r))
 	notes := map[string]string{}
 	if rows, err := a.db.Query(`SELECT date,text FROM day_notes WHERE date>=? AND date<=?`, from, to); err == nil {
 		for rows.Next() {

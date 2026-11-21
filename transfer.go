@@ -29,6 +29,7 @@ var transferTables = []tableDef{
 	{"events", []string{"id", "kind", "date", "start_min", "end_min", "subject_id", "title", "room_id", "owner_id", "capacity", "note", "series_id", "created_by", "created_at", "updated_at", "deleted_at", "deleted_by"}, true},
 	{"event_teachers", []string{"event_id", "user_id"}, false},
 	{"event_groups", []string{"event_id", "group_id"}, false},
+	{"event_signups", []string{"event_id", "student_id", "created_at"}, false},
 	{"consultations", []string{"id", "date", "start_min", "student_id", "teacher_id", "kind", "participants", "topic", "notes", "agreements", "follow_up", "status", "confidential", "created_at", "updated_at", "deleted_at", "deleted_by"}, true},
 	{"goals", []string{"id", "student_id", "title", "description", "area", "period", "review_date", "status", "created_by", "created_at", "updated_at", "deleted_at", "deleted_by"}, true},
 	{"goal_notes", []string{"id", "goal_id", "author_id", "date", "text", "created_at"}, true},

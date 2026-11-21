@@ -777,3 +777,20 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
 .tt-ev .ev-kind { padding: 0 4px; font-size: 9px; line-height: 1.5; vertical-align: 1px; }
 .tt-ev.ev-trip .ev-title { padding: 0 6px; line-height: 1.3; }
 .tt-ev { padding-top: 3px; padding-bottom: 3px; }
+
+/* ---------- class sign-ups ---------- */
+.tt-ev { padding-right: 34px; }
+.ev-badge { position: absolute; top: 3px; right: 4px; font: 600 10.5px/1 var(--mono); padding: 3px 5px; border-radius: 2px; pointer-events: none; }
+.ev-check { background: var(--green); color: #fff; font: 700 13px/1 var(--font); padding: 2px 5px; }
+.ev-full { background: var(--paper-3); color: var(--ink-2); text-transform: uppercase; letter-spacing: .05em; }
+.ev-count { background: color-mix(in srgb, var(--paper) 70%, transparent); color: var(--ink); }
+.ev-count.is-full { background: var(--red); color: #fff; }
+.signup { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--rule-soft); background: var(--paper-2); padding: 12px 14px; margin: 4px 0 12px; }
+.signup.is-on { border-color: var(--green); box-shadow: inset 4px 0 0 var(--green); }
+.signup .check { font-size: 16px; }
+.signup input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--green); }
+.signup-count { font: 13px var(--mono); color: var(--ink-2); }
+.signup-list { border-top: 1px solid var(--rule-soft); padding-top: 10px; }
+.signup-names { margin: 4px 0 0; padding-left: 1.4em; columns: 2; column-gap: 24px; font-size: 14px; }
+.signup-names li { break-inside: avoid; padding: 2px 0; }
+@media (max-width: 760px) { .signup-names { columns: 1; } }

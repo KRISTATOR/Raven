@@ -445,6 +445,7 @@ func systemRules(role string) string {
 
 const helpStudent = `- Sign-in: with the school Google account (@montetrida.cz). Pupils see two pages: "Rozvrh" and "Moje cíle", plus "O názvu" (the story behind the name Raven) in the menu under their name.
 - Rozvrh: the week timetable. Arrows switch weeks, "Tento týden" jumps back, the date field jumps to any week. Several classes can run at the same time; pupils choose which one to attend. Clicking a lesson shows details (teacher, room, note). "Zobrazit" can show only trips of the pupil's tutor group. Friday is usually the trip day ("výjezdový den"); trips list which tutor groups go. Hatched columns are holidays. Pupils cannot change the timetable.
+- Signing up: pupils open a class in "Rozvrh" and tick "Jdu na tuto hodinu"; a green tick then shows on the class. Full classes, past classes and trips cannot be signed up for, and a pupil cannot be signed up for two classes at the same time. Unticking signs the pupil off.
 - Moje cíle: the pupil's personal goals with their status, review date and notes from teachers. Goals are set together with the tutor; pupils cannot edit them here. If the page says the account is not linked, the tutor must add the pupil's school e-mail to their record.
 - Ranní kruhy (morning circles) take place every morning in the tutor group before lessons.
 - The sun/moon button switches between the light and dark look.`
@@ -452,6 +453,7 @@ const helpStudent = `- Sign-in: with the school Google account (@montetrida.cz).
 const helpStaff = `- Roles: Učitel (teacher) manages only their own lessons, writes consultations and manages goals of their own tutor group; Koordinátor can also edit everyone's lessons, manage pupils, groups, subjects and rooms, and see the change history; Správce (admin) also manages accounts, lesson lengths, school-day times, trip day, holidays, sign-in settings, backups and this assistant.
 - Sign-in: school Google account (@zsarcha.cz for teachers); other addresses need an extra password. Name and password sign-in also exists.
 - Rozvrh: "+ Přidat do rozvrhu" or click an empty slot to add a lesson, trip ("Výjezd") or other event. Lesson lengths are limited to the lengths the admin allows. "Opakovat každý týden" creates a weekly series (holidays skipped); editing or deleting a series asks whether to apply to one or all following. Clashes of room or teacher are warned. "Kopírovat týden…" copies a week (teachers: own lessons; coordinators: whole school). Trips have departure, return ("k obědu" / "do konce dne"), accompanying teachers and tutor groups. Holidays block planning. "Tisk" prints the week. Coordinators can add a note to a day.
+- Pupils sign up for classes themselves ("Jdu na tuto hodinu"). The class block shows signed-up/capacity (red when full); the class's teacher, co-teachers and coordinators see the list of names when opening the class. Capacity is set in the class form ("Kapacita").
 - Konzultace: "+ Nová konzultace"; fields for pupil, type, date, participants, topic, record, agreements, follow-up date and status. "Důvěrné" limits visibility to the author, the pupil's tutor, coordinators and admins. "Čeká na zápis" lists past meetings still marked as planned.
 - Osobní cíle: pick a pupil on the left; tutors and coordinators create goals ("+ Nový cíl"), anyone on staff can add progress notes. Pupils see their goals read-only in "Moje cíle".
 - Žáci a skupiny: tutor groups and the pupil list; coordinators add pupils (also in bulk), edit groups and use "Excel…" to download, edit and upload pupils and goals (deleting a row in Excel deletes nothing).
@@ -572,6 +574,7 @@ func (a *App) assistantData(u *User) string {
 		rows.Close()
 	}
 	a.attachRelations(evs)
+	a.attachSignups(evs, u)
 	kinds := map[string]string{"lesson": "lesson", "trip": "TRIP", "other": "event"}
 	for _, e := range evs {
 		title := e.Title
@@ -597,8 +600,14 @@ func (a *App) assistantData(u *User) string {
 			}
 			line += "; groups: " + strings.Join(gn, ", ")
 		}
-		if e.Capacity != nil {
-			line += fmt.Sprintf("; capacity %d", *e.Capacity)
+		if e.Kind != "trip" && (e.Signups > 0 || e.Capacity != nil) {
+			line += fmt.Sprintf("; pupils signed up: %d", e.Signups)
+			if e.Capacity != nil {
+				line += fmt.Sprintf(" of %d places", *e.Capacity)
+			}
+		}
+		if e.Signed {
+			line += "; THIS PUPIL IS SIGNED UP (going)"
 		}
 		if e.Note != "" {
 			line += "; note: " + oneLine(e.Note, 200)
