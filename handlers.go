@@ -628,3 +628,27 @@ func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
 	a.audit(currentUser(r).ID, "update", "settings", nil, fmt.Sprintf("Upraveny bloky hodin (%d)", len(out)))
 	writeJSON(w, out)
 }
+
+// handleSaveLunch lets coordinators and admins move the lunch break (shown in the timetable).
+func (a *App) handleSaveLunch(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Start int `json:"lunch_start"`
+		End   int `json:"lunch_end"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if body.Start < 0 || body.End > 24*60 || body.End < body.Start {
+		writeErr(w, http.StatusBadRequest, "Konec oběda musí být po jeho začátku.")
+		return
+	}
+	s := a.loadSettings()
+	s.LunchStart, s.LunchEnd = body.Start, body.End
+	if err := a.saveSettings(s); dbErr(w, err) {
+		return
+	}
+	a.audit(currentUser(r).ID, "update", "settings", nil, fmt.Sprintf("Oběd: %s–%s", hmGo(body.Start), hmGo(body.End)))
+	writeJSON(w, map[string]int{"lunch_start": s.LunchStart, "lunch_end": s.LunchEnd})
+}
+
+func hmGo(m int) string { return fmt.Sprintf("%d:%02d", m/60, m%60) }

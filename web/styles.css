@@ -1069,3 +1069,6 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
 .app-code-input { font: 700 30px var(--mono); letter-spacing: .3em; text-align: center; padding: 10px; text-transform: uppercase; }
 .approve-ok span { color: var(--green); font-weight: 700; margin-right: 4px; }
 @media (max-width: 760px) { .auth { padding: calc(env(safe-area-inset-top) + 16px) 16px 24px; justify-content: flex-start; } .auth-card { border-width: 2px; } }
+
+.lunch-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+.lunch-form .field { width: 130px; }

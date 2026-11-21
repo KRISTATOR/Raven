@@ -34,6 +34,28 @@ export function AdminPage({ params }) {
   </div>`;
 }
 
+// ---------- lunch break (coordinators and admins) ----------
+function LunchForm() {
+  const app = useApp();
+  const [f, setF] = useState({ lunch_start: app.settings.lunch_start, lunch_end: app.settings.lunch_end });
+  const [err, setErr] = useState('');
+  const save = async (e) => {
+    e.preventDefault(); setErr('');
+    if (f.lunch_end < f.lunch_start) { setErr('Konec oběda musí být po jeho začátku.'); return; }
+    try { await api('PUT', '/api/settings/lunch', f); app.toast('Čas oběda uložen.'); app.reloadBoot(); } catch (x) { setErr(x.message); }
+  };
+  return html`<section class="section">
+    <div class="section-head"><h2>Oběd</h2></div>
+    <p class="muted">Pruh „Oběd“ v rozvrhu. Stejný začátek i konec = oběd se v rozvrhu nezobrazí.</p>
+    <form class="lunch-form" onSubmit=${save}>
+      <${Field} label="Oběd od"><${TimeInput} value=${f.lunch_start} onChange=${(v) => v != null && setF({ ...f, lunch_start: v })} /><//>
+      <${Field} label="Oběd do"><${TimeInput} value=${f.lunch_end} onChange=${(v) => v != null && setF({ ...f, lunch_end: v })} /><//>
+      <button class="btn btn-primary">Uložit oběd</button>
+    </form>
+    <${ErrorLine} error=${err} />
+  </section>`;
+}
+
 // ---------- time blocks: ready-made class times to pick from when planning ----------
 function BlocksTab() {
   const app = useApp();
@@ -56,7 +78,8 @@ function BlocksTab() {
     } catch (x) { setErr(x.message); }
     setBusy(false);
   };
-  return html`<section class="section">
+  return html`<${LunchForm} />
+  <section class="section">
     <div class="section-head"><h2>Bloky hodin <span class="count">${rows.length}</span></h2></div>
     <p class="muted">Pevné časy hodin, ze kterých si vyučující při plánování jen vyberou – nemusí pokaždé psát začátek a konec. Blok platí i tehdy, když jeho délka není mezi povolenými délkami. Upravovat je může koordinátor a správce.</p>
     <form onSubmit=${save}>

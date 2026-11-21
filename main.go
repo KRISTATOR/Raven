@@ -294,6 +294,7 @@ func (a *App) routes() http.Handler {
 
 	mux.HandleFunc("PUT /api/settings", a.auth(A, a.handleSaveSettings))
 	mux.HandleFunc("PUT /api/settings/blocks", a.auth(C, a.handleSaveBlocks))
+	mux.HandleFunc("PUT /api/settings/lunch", a.auth(C, a.handleSaveLunch))
 	mux.HandleFunc("GET /api/users", a.auth(A, a.handleListUsers))
 	mux.HandleFunc("POST /api/users", a.auth(A, a.handleSaveUser))
 	mux.HandleFunc("PUT /api/users/{id}", a.auth(A, a.handleSaveUser))
