@@ -50,7 +50,7 @@ export function PeoplePage() {
             </header>
             <div class="group-tutor">${tutor ? html`tutor <b>${tutor.name}</b>` : html`<span class="muted">bez tutora</span>`}</div>
             <div class="group-grades">${Object.entries(counts).map(([gr, n]) => html`<span>${gr}. roč. <b>${n}</b></span>`)}</div>
-            <ul class="group-list">${members.map((s) => html`<li><a href=${'#/cile?student=' + s.id}>${studentNameRev(s)}</a><span class="muted">${s.grade}.</span></li>`)}</ul>
+            <ul class="group-list">${members.map((s) => html`<li><a href=${'#/zak?id=' + s.id} title="Karta žáka">${studentNameRev(s)}</a><span class="muted">${s.grade}.</span></li>`)}</ul>
             ${isCoord && html`<button class="btn btn-ghost btn-block" onClick=${() => setDlg({ type: 'group', g })}>Upravit skupinu</button>`}
           </article>`;
         })}
@@ -75,7 +75,7 @@ export function PeoplePage() {
           const g = s.group_id && maps.groups[s.group_id];
           const t = g && g.tutor_id && maps.users[g.tutor_id];
           return html`<tr>
-            <td><b>${studentNameRev(s)}</b>${s.email && html`<br /><span class="mono small muted">${s.email}</span>`}${s.note && html`<br /><span class="muted small">${s.note}</span>`}</td>
+            <td><a class="student-link" href=${'#/zak?id=' + s.id} title="Karta žáka"><b>${studentNameRev(s)}</b></a>${s.email && html`<br /><span class="mono small muted">${s.email}</span>`}${s.note && html`<br /><span class="muted small">${s.note}</span>`}</td>
             <td class="mono">${s.grade}.</td>
             <td>${g ? html`<${Swatch} color=${g.color} /> ${g.name}` : html`<span class="muted">—</span>`}</td>
             <td class="small">${t ? t.name : '—'}</td>

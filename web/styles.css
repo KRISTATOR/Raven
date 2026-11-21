@@ -893,3 +893,58 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
 .block-pick.on { background: var(--yellow); border-color: var(--yellow); color: var(--on-gold); }
 .block-pick.on span { color: var(--on-gold); }
 @media (max-width: 760px) { .blocks-grid { grid-template-columns: 1fr 84px 84px 36px; } .blocks-grid > .mono, .blocks-grid > .field-label:nth-child(4) { display: none; } }
+
+/* ---------- Karta žáka ---------- */
+.back-link { display: inline-block; font: 13px var(--mono); color: var(--ink-2); text-decoration: none; margin-bottom: 10px; }
+.back-link:hover { color: var(--ink); }
+.student-link { color: inherit; text-decoration: none; border-bottom: 1px solid var(--rule-soft); }
+.student-link:hover { border-bottom-color: var(--yellow); }
+.card-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.cs-tile { border: 1px solid var(--rule-soft); border-top: 3px solid var(--green); background: var(--paper-hi); padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+.cs-tile span { font: 12px var(--mono); color: var(--ink-2); }
+.cs-tile b { font: 700 22px/1.15 var(--font); }
+.cs-tile small { font-size: 13px; color: var(--ink-2); }
+.cs-tile.is-warn { border-top-color: var(--yellow); }
+.cs-tile.is-bad { border-top-color: var(--red); }
+.card-flags { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 6px; }
+.card-flags li { display: flex; gap: 10px; align-items: baseline; padding: 9px 12px; background: var(--paper-hi); border-left: 3px solid var(--yellow); }
+.card-flags li.is-bad { border-left-color: var(--red); }
+.card-flags li.is-info { border-left-color: var(--rule-soft); color: var(--ink-2); }
+.cf-icon { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--yellow); color: var(--on-gold); font: 700 11px var(--mono); transform: translateY(2px); }
+.card-flags li.is-bad .cf-icon { background: var(--red); color: var(--paper); }
+.card-flags li.is-info .cf-icon { background: var(--paper-3); color: var(--ink-2); }
+.card-ok { padding: 10px 12px; border-left: 3px solid var(--green); background: var(--paper-hi); margin: 0 0 22px; }
+.card-ok span { color: var(--green); font-weight: 700; margin-right: 6px; }
+.card-week { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.cw-day { border: 1px solid var(--rule-soft); background: var(--paper-hi); padding: 8px; min-height: 90px; display: flex; flex-direction: column; gap: 6px; }
+.cw-day.is-today { border-color: var(--yellow); }
+.cw-head { font-size: 14px; padding-bottom: 4px; border-bottom: 1px solid var(--rule-faint); }
+.cw-none { color: var(--ink-3); font: 13px var(--mono); }
+.cw-ev { display: flex; flex-direction: column; gap: 1px; padding: 5px 7px; border-left: 3px solid var(--c); background: var(--paper-2); font-size: 13.5px; line-height: 1.25; }
+.cw-ev.is-trip { border-left-style: dashed; }
+.card-hist { display: grid; gap: 2px; }
+.ch-row { display: grid; grid-template-columns: 210px 1fr 230px; gap: 14px; align-items: center; padding: 6px 8px; background: transparent; border: 0; border-bottom: 1px solid var(--rule-faint); color: var(--ink); cursor: pointer; text-align: left; font-size: 14px; }
+.ch-row:hover { background: var(--paper-2); }
+.ch-row.on { background: var(--paper-2); box-shadow: inset 3px 0 var(--yellow); }
+.ch-bar { height: 10px; background: var(--paper-2); border-radius: 2px; overflow: hidden; }
+.ch-bar i { display: block; height: 100%; background: var(--yellow); border-radius: 0 4px 4px 0; }
+.ch-val { font-size: 12.5px; color: var(--ink-2); text-align: right; }
+.goal-meter { display: flex; gap: 3px; margin-bottom: 10px; max-width: 420px; }
+.goal-meter i { flex: 1; height: 10px; border-radius: 2px; background: var(--paper-3); }
+.goal-meter .gm-achieved { background: var(--green); }
+.goal-meter .gm-partial { background: var(--yellow); }
+.goal-meter .gm-not_achieved { background: var(--red); }
+.goal-meter .gm-active { background: var(--paper-3); box-shadow: inset 0 0 0 1px var(--ink-3); }
+.card-goals { list-style: none; margin: 0; padding: 0; }
+.card-goals li { display: grid; grid-template-columns: 150px 1fr auto; gap: 12px; align-items: baseline; padding: 8px 4px; border-bottom: 1px solid var(--rule-faint); }
+.card-goals .stamp { justify-self: start; }
+@media (max-width: 900px) {
+  .card-week { grid-template-columns: 1fr; }
+  .cw-day { min-height: 0; }
+}
+@media (max-width: 760px) {
+  .card-summary { grid-template-columns: 1fr; }
+  .ch-row { grid-template-columns: 1fr; gap: 4px; }
+  .ch-val { text-align: left; }
+  .card-goals li { grid-template-columns: 1fr; gap: 4px; }
+}

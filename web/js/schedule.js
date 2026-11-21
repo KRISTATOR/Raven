@@ -335,7 +335,7 @@ function SignupList({ ev }) {
     ${st.error ? html`<span class="bad small">Seznam se nepodařilo načíst: ${st.error}</span>`
       : st.loading ? html`<span class="muted small">Načítám…</span>`
       : list.length === 0 ? html`<span class="muted small">Zatím se nikdo nepřihlásil.</span>`
-      : html`<ol class="signup-names">${list.map((x) => html`<li>${x.name} <span class="muted">${x.grade}.${x.group ? ' · ' + x.group : ''}</span></li>`)}</ol>`}
+      : html`<ol class="signup-names">${list.map((x) => html`<li><a href=${'#/zak?id=' + x.student_id} title="Karta žáka">${x.name}</a> <span class="muted">${x.grade}.${x.group ? ' · ' + x.group : ''}</span></li>`)}</ol>`}
   </div>`;
 }
 

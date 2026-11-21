@@ -9,6 +9,7 @@ import { MyGoalsPage } from './student.js';
 import { AboutPage } from './about.js';
 import { AssistantPage } from './assistant.js';
 import { LoadPage } from './load.js';
+import { StudentCardPage } from './card.js';
 import { Mark, ThemeToggle } from './lib.js';
 
 function Wordmark({ small }) {
@@ -222,6 +223,7 @@ function Shell() {
     case 'konzultace': page = html`<${ConsultationsPage} params=${route.params} />`; break;
     case 'cile': page = html`<${GoalsPage} params=${route.params} />`; break;
     case 'zaci': page = html`<${PeoplePage} params=${route.params} />`; break;
+    case 'zak': page = html`<${StudentCardPage} params=${route.params} />`; break;
     case 'sprava': page = atLeast(me, 'coordinator') ? html`<${AdminPage} params=${route.params} />` : html`<${Dashboard} />`; break;
     default: page = html`<${Dashboard} />`;
   }
@@ -233,7 +235,7 @@ function Shell() {
       </a>
       <nav class="nav">
         ${nav.map(([p, label]) =>
-          html`<a href=${'#/' + p} class=${'nav-link' + (route.path === p || (isStudent && p === 'rozvrh' && !['moje-cile', 'rozlozeni', 'asistent', 'o-nazvu'].includes(route.path)) ? ' on' : '')}>${label}</a>`)}
+          html`<a href=${'#/' + p} class=${'nav-link' + (route.path === p || (p === 'zaci' && route.path === 'zak') || (isStudent && p === 'rozvrh' && !['moje-cile', 'rozlozeni', 'asistent', 'o-nazvu'].includes(route.path)) ? ' on' : '')}>${label}</a>`)}
       </nav>
       <div class="me">
         <${ThemeToggle} />

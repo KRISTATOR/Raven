@@ -14,10 +14,6 @@ export function LoadPage({ params }) {
   const week = params.w ? mondayOf(params.w) : schoolWeek();
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
-  const [mode, setModeRaw] = useState(() => store('loadMode', 'pie'));
-  const setMode = (m) => { setModeRaw(m); persist('loadMode', m); };
-  const [hover, setHover] = useState(null);
-
   const load = () => api('GET', `/api/student/load?week=${week}`, undefined, { quiet: true }).then((x) => { setD(x); setErr(''); }).catch((e) => setErr(e.message));
   useEffect(() => { setD(null); load(); }, [week]);
 
@@ -28,8 +24,21 @@ export function LoadPage({ params }) {
   if (err) return html`<div class="page"><${Head} week=${week} /><p class="bad">${err}</p></div>`;
   if (!d) return html`<div class="page"><${Head} week=${week} /><div class="loading-inline">Načítám…</div></div>`;
 
-  // Rows for the charts: every subject the pupil has this week or had last week,
-  // ordered by this week's time so the biggest slice comes first.
+  return html`<div class="page load-page">
+    <${Head} week=${week} />
+    <${LoadView} d=${d} you empty=${html`Na tento ani minulý týden nejsi přihlášený na žádnou hodinu. Přihlásíš se v <a href=${'#/rozvrh?w=' + week}>rozvrhu</a> – klikni na hodinu a zaškrtni „Jdu na tuto hodinu“.`} />
+    <${AlertsForm} alerts=${d.alerts} onSaved=${(a) => { setD({ ...d, alerts: a }); toast('Hlídání uloženo.'); }} />
+  </div>`;
+}
+
+// Stats, warnings and the four chart views for one pupil's week. Used by the pupil's
+// own "Rozložení hodin" page (you = true) and by the teachers' student card.
+export function LoadView({ d, you, empty, hideWarn }) {
+  const { maps } = useApp();
+  const [mode, setModeRaw] = useState(() => store('loadMode', 'pie'));
+  const setMode = (m) => { setModeRaw(m); persist('loadMode', m); };
+  const [hover, setHover] = useState(null);
+  // every subject the pupil has this week or had last week, biggest first
   const subj = (id) => maps.subjects[id] || { name: 'Předmět', short: '?', color: '#888' };
   const rows = d.subjects.map((x) => ({ ...x, name: subj(x.subject_id).name, short: subj(x.subject_id).short, color: subj(x.subject_id).color }))
     .sort((a, b) => b.minutes - a.minutes || b.prev_minutes - a.prev_minutes || a.name.localeCompare(b.name, 'cs'));
@@ -40,26 +49,21 @@ export function LoadPage({ params }) {
   const alertBy = Object.fromEntries(d.alerts.map((a) => [a.subject_id, a]));
   const shown = rows.filter((r) => r.minutes > 0);
   const hv = hover && rows.find((r) => r.subject_id === hover);
-
-  return html`<div class="page load-page">
-    <${Head} week=${week} />
+  return html`
     <div class="load-stats">
       <div><b>${fmtMinutes(total) || '0 h'}</b><span>výuky tento týden</span></div>
       <div><b>${lessons}</b><span>${lessons === 1 ? 'hodina' : lessons >= 2 && lessons <= 4 ? 'hodiny' : 'hodin'}</span></div>
       <div><b>${shown.length}</b><span>${shown.length === 1 ? 'předmět' : shown.length >= 2 && shown.length <= 4 ? 'předměty' : 'předmětů'}</span></div>
       <div><b>${total - prevTotal > 0 ? '+' : ''}${hrs(total - prevTotal)}</b><span>proti minulému týdnu</span></div>
     </div>
-
-    ${warn.length > 0 && html`<ul class="load-warn">${warn.map((w) => html`<li class=${'is-' + w.kind}>
+    ${!hideWarn && warn.length > 0 && html`<ul class="load-warn">${warn.map((w) => html`<li class=${'is-' + w.kind}>
       <span class="lw-icon" aria-hidden="true">${w.kind === 'low' ? '▼' : '▲'}</span>
-      <span><b>${w.kind === 'low' ? 'Málo' : 'Moc'}: ${w.name}</b> – tento týden ${hrs(w.minutes)}, hlídáš ${w.kind === 'low' ? 'alespoň' : 'nejvýše'} ${hrs(w.limit)}.</span>
+      <span><b>${w.kind === 'low' ? 'Málo' : 'Moc'}: ${w.name}</b> – tento týden ${hrs(w.minutes)}, ${you ? 'hlídáš' : 'žák si hlídá'} ${w.kind === 'low' ? 'alespoň' : 'nejvýše'} ${hrs(w.limit)}.</span>
     </li>`)}</ul>`}
-
     <div class="seg load-modes" role="tablist">
       ${MODES.map(([k, label]) => html`<button type="button" role="tab" aria-selected=${mode === k} class=${'seg-b' + (mode === k ? ' on' : '')} onClick=${() => setMode(k)}>${label}</button>`)}
     </div>
-
-    ${total === 0 && prevTotal === 0 ? html`<${Empty}>Na tento ani minulý týden nejsi přihlášený na žádnou hodinu. Přihlásíš se v <a href=${'#/rozvrh?w=' + week}>rozvrhu</a> – klikni na hodinu a zaškrtni „Jdu na tuto hodinu“.<//>` : html`
+    ${total === 0 && prevTotal === 0 ? html`<${Empty}>${empty}<//>` : html`
       <div class="chart-card">
         <div class="chart-readout">${hv ? html`<i style=${`background:${hv.color}`}></i><b>${hv.name}</b> · tento týden ${fmtMinutes(hv.minutes) || '0 h'} (${pct(hv.minutes, total)}) · minulý ${fmtMinutes(hv.prev_minutes) || '0 h'}`
           : html`<span class="muted">Najeď na předmět pro podrobnosti.</span>`}</div>
@@ -67,11 +71,10 @@ export function LoadPage({ params }) {
         ${mode === 'slope' && html`<${Slope} rows=${rows} hover=${hover} setHover=${setHover} />`}
         ${mode === 'radar' && html`<${Radar} rows=${rows} alerts=${alertBy} hover=${hover} setHover=${setHover} />`}
         ${mode === 'table' && html`<${LoadTable} rows=${rows} total=${total} alerts=${alertBy} />`}
-      </div>`}
-
-    <${AlertsForm} alerts=${d.alerts} onSaved=${(a) => { setD({ ...d, alerts: a }); toast('Hlídání uloženo.'); }} />
-  </div>`;
+      </div>`}`;
 }
+
+export const hoursText = hrs;
 
 function Head({ week }) {
   return html`<div class="page-head sched-head">
