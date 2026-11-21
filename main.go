@@ -320,6 +320,10 @@ func logRequests(h http.Handler) http.Handler {
 				writeErr(w, http.StatusInternalServerError, "Vnitřní chyba serveru.")
 			}
 		}()
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			// live data: never let a browser or CDN hand back a stale answer
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		h.ServeHTTP(w, r)
 	})
 }

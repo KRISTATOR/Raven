@@ -76,7 +76,10 @@ export function SchedulePage({ params }) {
   useEffect(() => { setLoading(true); load(); }, [load]);
   useEffect(() => {
     const t = setInterval(() => { if (!document.hidden) load(); tick((x) => x + 1); }, 60000);
-    return () => clearInterval(t);
+    const back = () => { if (!document.hidden) load(); };
+    document.addEventListener('visibilitychange', back);
+    window.addEventListener('focus', back);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
   }, [load]);
 
   const visible = useMemo(() => data.events.filter((ev) => {
@@ -193,7 +196,7 @@ export function SchedulePage({ params }) {
     </div>
     <p class="grid-hint">${readOnly ? '' : 'Klikněte do prázdného místa v řádku dne a přidáte hodinu na daný čas. Nejvýše pět hodin může běžet současně. '}${tripDayName ? `Výjezdový den: ${tripDayName}.` : ''}</p>
 
-    ${dialog && html`<${EventDialog} ev=${dialog.ev} preset=${dialog.preset} onClose=${() => setDialog(null)} onSaved=${() => { setDialog(null); load(); }} onRefresh=${load} />`}
+    ${dialog && html`<${EventDialog} ev=${dialog.ev} preset=${dialog.preset} onClose=${() => { setDialog(null); load(); }} onSaved=${() => { setDialog(null); load(); }} onRefresh=${load} />`}
     ${copyOpen && html`<${CopyWeekDialog} week=${week} onClose=${() => setCopyOpen(false)} onDone=${(target) => { setCopyOpen(false); go('rozvrh', { w: target }); }} />`}
     ${noteDay && html`<${DayNoteDialog} date=${noteDay} text=${data.notes[noteDay] || ''} onClose=${() => setNoteDay(null)} onSaved=${() => { setNoteDay(null); load(); }} />`}
   </div>`;
@@ -306,12 +309,13 @@ function SignupBox({ ev, onRefresh }) {
 }
 
 function SignupList({ ev }) {
-  const [st] = useAsync(() => api('GET', `/api/events/${ev.id}/signups`, undefined, { quiet: true }), [ev.id]);
-  if (st.error || ev.kind === 'trip') return null;
+  const [st] = useAsync(() => api('GET', `/api/events/${ev.id}/signups?t=${Date.now()}`, undefined, { quiet: true }), [ev.id]);
+  if (ev.kind === 'trip') return null;
   const list = st.data ? st.data.signups : [];
   return html`<div class="field field-wide signup-list">
     <span class="field-label">Přihlášení žáci <em>${list.length}${ev.capacity ? ' z ' + ev.capacity : ''}</em></span>
-    ${st.loading ? html`<span class="muted small">Načítám…</span>`
+    ${st.error ? html`<span class="bad small">Seznam se nepodařilo načíst: ${st.error}</span>`
+      : st.loading ? html`<span class="muted small">Načítám…</span>`
       : list.length === 0 ? html`<span class="muted small">Zatím se nikdo nepřihlásil.</span>`
       : html`<ol class="signup-names">${list.map((x) => html`<li>${x.name} <span class="muted">${x.grade}.${x.group ? ' · ' + x.group : ''}</span></li>`)}</ol>`}
   </div>`;
