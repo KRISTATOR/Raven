@@ -8,6 +8,7 @@ import { AdminPage } from './admin.js';
 import { MyGoalsPage } from './student.js';
 import { AboutPage } from './about.js';
 import { AssistantPage } from './assistant.js';
+import { LoadPage } from './load.js';
 import { Mark, ThemeToggle } from './lib.js';
 
 function Wordmark({ small }) {
@@ -208,14 +209,14 @@ function Shell() {
     return () => ro.disconnect();
   }, []);
   const isStudent = me.role === 'student';
-  const nav = isStudent ? [['rozvrh', 'Rozvrh'], ['moje-cile', 'Moje cíle'], ['asistent', 'Asistent']] : NAV.filter(([, , role]) => !role || atLeast(me, role));
+  const nav = isStudent ? [['rozvrh', 'Rozvrh'], ['rozlozeni', 'Rozložení hodin'], ['moje-cile', 'Moje cíle'], ['asistent', 'Asistent']] : NAV.filter(([, , role]) => !role || atLeast(me, role));
   let page;
   if (route.path === 'o-nazvu') {
     page = html`<${AboutPage} />`;
   } else if (route.path === 'asistent') {
     page = html`<${AssistantPage} />`;
   } else if (isStudent) {
-    page = route.path === 'moje-cile' ? html`<${MyGoalsPage} />` : html`<${SchedulePage} params=${route.params} />`;
+    page = route.path === 'moje-cile' ? html`<${MyGoalsPage} />` : route.path === 'rozlozeni' ? html`<${LoadPage} params=${route.params} />` : html`<${SchedulePage} params=${route.params} />`;
   } else switch (route.path) {
     case 'rozvrh': page = html`<${SchedulePage} params=${route.params} />`; break;
     case 'konzultace': page = html`<${ConsultationsPage} params=${route.params} />`; break;
@@ -232,7 +233,7 @@ function Shell() {
       </a>
       <nav class="nav">
         ${nav.map(([p, label]) =>
-          html`<a href=${'#/' + p} class=${'nav-link' + (route.path === p || (isStudent && p === 'rozvrh' && !['moje-cile', 'asistent', 'o-nazvu'].includes(route.path)) ? ' on' : '')}>${label}</a>`)}
+          html`<a href=${'#/' + p} class=${'nav-link' + (route.path === p || (isStudent && p === 'rozvrh' && !['moje-cile', 'rozlozeni', 'asistent', 'o-nazvu'].includes(route.path)) ? ' on' : '')}>${label}</a>`)}
       </nav>
       <div class="me">
         <${ThemeToggle} />

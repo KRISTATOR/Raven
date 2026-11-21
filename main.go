@@ -232,6 +232,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /api/me/password", a.auth(S, a.handleChangePassword))
 	mux.HandleFunc("GET /api/bootstrap", a.auth(S, a.handleBootstrap))
 	mux.HandleFunc("GET /api/student/goals", a.auth(S, a.handleStudentGoals))
+	mux.HandleFunc("GET /api/student/load", a.auth(S, a.handleStudentLoad))
+	mux.HandleFunc("PUT /api/student/alerts", a.auth(S, a.handleSaveAlerts))
 	mux.HandleFunc("PUT /api/settings/gate", a.auth(A, a.handleSaveGate))
 	mux.HandleFunc("GET /api/settings/ai", a.auth(A, a.handleGetAISettings))
 	mux.HandleFunc("PUT /api/settings/ai", a.auth(A, a.handleSaveAISettings))

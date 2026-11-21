@@ -41,7 +41,7 @@ export function eventColor(ev, maps) {
 }
 const teachersOf = (ev) => [ev.owner_id, ...(ev.teacher_ids || [])];
 
-function weekTitle(mon) {
+export function weekTitle(mon) {
   const fri = addDays(mon, 4);
   const a = parseISO(mon), b = parseISO(fri);
   if (a.getMonth() === b.getMonth()) return `${a.getDate()}.–${b.getDate()}. ${MONTHS_GEN[b.getMonth()]} ${b.getFullYear()}`;
@@ -65,6 +65,11 @@ export function SchedulePage({ params }) {
   const [noteDay, setNoteDay] = useState(null);
   const [, tick] = useState(0);
   const setFilter = (f) => { setFilterRaw(f); persist('filter', f); };
+  const isPupil = me.role === 'student';
+  const [onlyMine, setOnlyMineRaw] = useState(() => isPupil && store('onlyMine', false));
+  const setOnlyMine = (v) => { setOnlyMineRaw(v); persist('onlyMine', v); };
+  const myGroup = isPupil && boot.students[0] ? boot.students[0].group_id : null;
+  const [alerts, setAlerts] = useState([]);
 
   const load = useCallback(async () => {
     try {
@@ -82,7 +87,13 @@ export function SchedulePage({ params }) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
   }, [load]);
 
+  useEffect(() => {
+    if (!isPupil || !boot.students.length) return;
+    api('GET', `/api/student/load?week=${week}`, undefined, { quiet: true }).then((d) => setAlerts(breaches(d, maps))).catch(() => setAlerts([]));
+  }, [week, data]);
+
   const visible = useMemo(() => data.events.filter((ev) => {
+    if (onlyMine) return ev.signed || (ev.kind === 'trip' && myGroup && (ev.group_ids || []).includes(myGroup));
     if (filter === 'all') return true;
     if (filter === 'mine') return me.role === 'student' || teachersOf(ev).includes(me.id);
     const [k, id] = filter.split(':');
@@ -91,7 +102,7 @@ export function SchedulePage({ params }) {
     if (k === 'g') return (ev.group_ids || []).includes(Number(id));
     if (k === 'k') return ev.kind === id;
     return true;
-  }), [data, filter, me.id]);
+  }), [data, filter, me.id, onlyMine]);
 
   // Time axis: whole hours, covering the school day and every visible class.
   const starts = visible.map((e) => e.start), ends = visible.map((e) => e.end);
@@ -135,7 +146,13 @@ export function SchedulePage({ params }) {
     </div>
 
     <div class="toolbar">
-      <label class="filter">
+      ${isPupil && html`<label class="switch" title="Přepíná mezi celým rozvrhem školy a jen tvými hodinami">
+        <input type="checkbox" role="switch" checked=${onlyMine} onChange=${(e) => setOnlyMine(e.target.checked)} />
+        <span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-text"><b>Jen moje hodiny</b><small>${onlyMine ? mineSummary(visible) : 'zobrazí, kam tento týden opravdu jdeš'}</small></span>
+      </label>`}
+      ${isPupil && alerts.length > 0 && html`<a class="alert-pill" href=${'#/rozlozeni?w=' + week}><span aria-hidden="true">!</span> ${alerts.length === 1 ? '1 upozornění' : alerts.length + ' upozornění'} k rozložení hodin</a>`}
+      ${!onlyMine && html`<label class="filter">
         <span class="field-label">Zobrazit</span>
         <select value=${filter} onChange=${(e) => setFilter(e.target.value)}>
           <option value="all">Celou školu</option>
@@ -148,7 +165,7 @@ export function SchedulePage({ params }) {
           ${boot.groups.length > 0 && html`<optgroup label="Tutorská skupina (výjezdy)">${boot.groups.map((g) => html`<option value=${'g:' + g.id}>${g.name}</option>`)}</optgroup>`}
           ${boot.rooms.length > 0 && html`<optgroup label="Místnost">${boot.rooms.map((r) => html`<option value=${'r:' + r.id}>${r.name}</option>`)}</optgroup>`}
         </select>
-      </label>
+      </label>`}
       <div class="toolbar-spacer"></div>
       <button class="btn" onClick=${() => window.print()}>Tisk</button>
       ${!readOnly && html`<button class="btn" onClick=${() => setCopyOpen(true)}>Kopírovat týden…</button>
@@ -169,8 +186,8 @@ export function SchedulePage({ params }) {
           const note = data.notes[d];
           const laid = layoutDay(visible.filter((e) => e.date === d));
           const lanesMax = laid.reduce((mx, x) => Math.max(mx, x.lanes), 1);
-          const rowH = Math.max(MIN_LANES, lanesMax) * LANE_H + 8;
-          return html`<div class=${'tt-row' + (d === today() ? ' is-today' : '') + (hol ? ' is-hol' : '')}>
+          const rowH = Math.max(onlyMine ? 1 : MIN_LANES, lanesMax) * LANE_H + 8;
+          return html`<div class=${'tt-row' + (d === today() ? ' is-today' : '') + (hol ? ' is-hol' : '') + (onlyMine ? ' is-mine-only' : '')}>
             <div class="tt-day">
               <div class="tt-dn">${DAYS[i]}</div>
               <div class="tt-dd">${fmtDay(d)}</div>
@@ -186,6 +203,7 @@ export function SchedulePage({ params }) {
               ${settings.circle_end > settings.circle_start && html`<div class="tt-band tt-circle" style=${`left:${pct(settings.circle_start)}%;width:${pct(settings.circle_end) - pct(settings.circle_start)}%`}><span>Ranní kruhy</span></div>`}
               ${settings.lunch_end > settings.lunch_start && html`<div class="tt-band tt-lunch" style=${`left:${pct(settings.lunch_start)}%;width:${pct(settings.lunch_end) - pct(settings.lunch_start)}%`}><span>Oběd</span></div>`}
               ${hol && html`<div class="tt-hol"><span>${hol.name}</span></div>`}
+              ${onlyMine && !hol && laid.length === 0 && html`<div class="tt-empty">Na tento den nejsi přihlášený na žádnou hodinu.</div>`}
               ${laid.map(({ ev, lane }) => html`<${EventBlock} ev=${ev} top=${lane * LANE_H + 4} left=${pct(ev.start)} width=${pct(ev.end) - pct(ev.start)}
                   onOpen=${(e) => { e.stopPropagation(); setDialog({ ev }); }} />`)}
               ${isThisWeek && d === today() && nm >= gridStart && nm <= gridEnd && html`<div class="tt-now" style=${`left:${pct(nm)}%`}><span>${hm(nm)}</span></div>`}
@@ -516,4 +534,32 @@ function EventForm({ ev, preset, onClose, onSaved }) {
       </div>`}
     </form>
   <//>`;
+}
+
+// "Jen moje hodiny" summary line, e.g. "6 hodin · 7 h 30 min".
+function mineSummary(evs) {
+  const lessons = evs.filter((e) => e.kind !== 'trip');
+  const min = lessons.reduce((t, e) => t + e.end - e.start, 0);
+  if (!lessons.length) return 'tento týden zatím nikam nejdeš';
+  const n = lessons.length;
+  return `${n} ${n === 1 ? 'hodina' : n <= 4 ? 'hodiny' : 'hodin'} · ${fmtMinutes(min)}`;
+}
+
+export function fmtMinutes(m) {
+  const h = Math.floor(m / 60), r = m % 60;
+  return h && r ? `${h} h ${r} min` : h ? `${h} h` : `${r} min`;
+}
+
+// Which of the pupil's own limits the week breaks.
+export function breaches(d, maps) {
+  if (!d) return [];
+  const by = Object.fromEntries((d.subjects || []).map((x) => [x.subject_id, x.minutes]));
+  const out = [];
+  for (const a of d.alerts || []) {
+    const m = by[a.subject_id] || 0;
+    const name = maps.subjects[a.subject_id]?.name || 'Předmět';
+    if (a.min_minutes != null && m < a.min_minutes) out.push({ subject_id: a.subject_id, kind: 'low', name, minutes: m, limit: a.min_minutes });
+    else if (a.max_minutes != null && m > a.max_minutes) out.push({ subject_id: a.subject_id, kind: 'high', name, minutes: m, limit: a.max_minutes });
+  }
+  return out;
 }

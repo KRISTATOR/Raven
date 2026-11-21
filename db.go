@@ -127,6 +127,13 @@ CREATE TABLE IF NOT EXISTS event_signups(
 	PRIMARY KEY(event_id, student_id)
 );
 CREATE INDEX IF NOT EXISTS event_signups_student ON event_signups(student_id);
+CREATE TABLE IF NOT EXISTS student_alerts(
+	student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+	subject_id BIGINT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+	min_minutes INTEGER,
+	max_minutes INTEGER,
+	PRIMARY KEY(student_id, subject_id)
+);
 CREATE TABLE IF NOT EXISTS consultations(
 	id {{ID}},
 	date TEXT NOT NULL,
