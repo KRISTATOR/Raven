@@ -288,14 +288,17 @@ function Shell() {
   const isStudent = me.role === 'student';
   const isPhone = useIsPhone();
   const phone = isStudent && isPhone;
-  // Teachers get the computer layout on phones too (for now): a wide viewport the phone zooms out.
+  // Staff accounts are for computers (for now). On a phone they see a notice; if they
+  // choose to continue anyway, they get the computer layout zoomed out.
+  const onPhoneDevice = /Android.*Mobile|iPhone|iPod|Windows Phone/i.test(navigator.userAgent) || Math.min(screen.width, screen.height) <= 760;
+  const [staffAnyway, setStaffAnyway] = useState(() => sessionStorage.getItem('raven.staffOnPhone') === '1');
   useEffect(() => {
-    if (isStudent || Math.min(screen.width, screen.height) > 760) return;
+    if (isStudent || !onPhoneDevice || !staffAnyway) return;
     const vp = document.querySelector('meta[name=viewport]');
     const prev = vp.content;
     vp.content = 'width=1280';
     return () => { vp.content = prev; };
-  }, [isStudent]);
+  }, [isStudent, staffAnyway]);
   const nav = isStudent ? [['rozvrh', 'Rozvrh'], ['rozlozeni', 'Rozložení hodin'], ['moje-cile', 'Moje cíle'], ['asistent', 'Asistent']] : NAV.filter(([, , role]) => !role || atLeast(me, role));
   let page;
   if (route.path === 'aplikace') {
@@ -315,6 +318,21 @@ function Shell() {
     case 'zak': page = html`<${StudentCardPage} params=${route.params} />`; break;
     case 'sprava': page = atLeast(me, 'coordinator') ? html`<${AdminPage} params=${route.params} />` : html`<${Dashboard} />`; break;
     default: page = html`<${Dashboard} />`;
+  }
+  if (!isStudent && onPhoneDevice && !staffAnyway) {
+    return html`<div class="auth pc-only">
+      <div class="auth-card">
+        <div class="auth-top"><${Wordmark} /><div class="auth-school">${boot.settings.school_name}</div></div>
+        <div class="auth-form">
+          <svg class="pc-only-icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="8" width="38" height="25" rx="2"/><path d="M17 40h14M24 33v7"/></svg>
+          <h2 class="pc-only-title">Otevři Raven na počítači</h2>
+          <p class="auth-lead">Účet <b>${me.name}</b> (${ROLE_LABEL[me.role].toLowerCase()}) je zatím určený pro počítač. Verze pro telefon je jen pro žáky.</p>
+          <p class="auth-note">Adresa: ${location.host}</p>
+          <button class="btn btn-primary btn-block btn-big" onClick=${app.logout}>Odhlásit se</button>
+          <button class="btn btn-ghost btn-block" onClick=${() => { sessionStorage.setItem('raven.staffOnPhone', '1'); setStaffAnyway(true); }}>Přesto zobrazit počítačovou verzi</button>
+        </div>
+      </div>
+    </div>`;
   }
   if (phone) {
     return html`<${PhoneShell} route=${route} page=${page} menu=${menu} onMenu=${() => setMenu(!menu)} />

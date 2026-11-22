@@ -1,7 +1,7 @@
 # Raven na telefonu
 
-The phone version is for pupils; teachers keep the computer layout (on a phone they
-get the desktop page, zoomed out). Everything runs from the same website,
+The phone version is for pupils. Teacher, coordinator and admin accounts opened on a
+phone see a notice to use a computer (with a "show the computer version anyway" link). Everything runs from the same website,
 https://raven-kristators-projects.vercel.app – the apps only open it.
 
 | Platform | What it is | How pupils get it |

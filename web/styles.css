@@ -1072,3 +1072,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
 
 .lunch-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
 .lunch-form .field { width: 130px; }
+
+/* staff account opened on a phone */
+.pc-only-icon { width: 56px; height: 56px; fill: none; stroke: var(--yellow); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; align-self: center; }
+.pc-only-title { font: 800 24px/1.15 var(--font); font-stretch: 108%; text-align: center; margin: 0; }
+.pc-only .auth-lead, .pc-only .auth-note { text-align: center; }
