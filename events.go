@@ -173,7 +173,7 @@ func (a *App) validateEvent(me *User, e *Event, s Settings) string {
 		if (e.SubjectID == nil || *e.SubjectID == 0) && e.Title == "" {
 			return "Vyberte předmět nebo zadejte název hodiny."
 		}
-		if !me.atLeast("admin") && !s.blockFor(e.Start, e.End) {
+		if !me.atLeast("admin") && !s.blockFor(e.Date, e.Start, e.End) {
 			ok := false
 			for _, l := range s.LessonLengths {
 				if e.End-e.Start == l {

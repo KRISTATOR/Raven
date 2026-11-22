@@ -3,6 +3,7 @@ import {
   addDays, mondayOf, today, isoWeek, fmtDay, fmtDate, fmtLong, hm, toMin, timeVal, weekdayOf, nowMin, DAYS, DAYS_SHORT, MONTHS_GEN, parseISO,
   holidayOn, atLeast, inkText, store, persist, TimeInput, useAsync, schoolWeek,
 } from './lib.js';
+import { TemplatesDialog } from './templates.js';
 
 const PPM = 1.45; // pixels per minute
 const KIND_LABEL = { lesson: 'Hodina', trip: 'Výjezd', other: 'Jiná akce' };
@@ -62,6 +63,7 @@ export function SchedulePage({ params }) {
   const [filter, setFilterRaw] = useState(() => store('filter', 'all'));
   const [dialog, setDialog] = useState(null);
   const [copyOpen, setCopyOpen] = useState(false);
+  const [tplOpen, setTplOpen] = useState(false);
   const [noteDay, setNoteDay] = useState(null);
   const [, tick] = useState(0);
   const setFilter = (f) => { setFilterRaw(f); persist('filter', f); };
@@ -168,6 +170,7 @@ export function SchedulePage({ params }) {
       </label>`}
       <div class="toolbar-spacer"></div>
       <button class="btn" onClick=${() => window.print()}>Tisk</button>
+      ${atLeast(me, 'admin') && html`<button class="btn" onClick=${() => setTplOpen(true)}>Šablony…</button>`}
       ${!readOnly && html`<button class="btn" onClick=${() => setCopyOpen(true)}>Kopírovat týden…</button>
       <button class="btn btn-primary" onClick=${() => setDialog({ preset: { date: days[0], start: settings.day_start, kind: 'lesson' } })}>+ Přidat do rozvrhu</button>`}
     </div>
@@ -215,6 +218,7 @@ export function SchedulePage({ params }) {
     <p class="grid-hint">${readOnly ? '' : 'Klikněte do prázdného místa v řádku dne a přidáte hodinu na daný čas. Nejvýše pět hodin může běžet současně. '}${tripDayName ? `Výjezdový den: ${tripDayName}.` : ''}</p>
 
     ${dialog && html`<${EventDialog} ev=${dialog.ev} preset=${dialog.preset} onClose=${() => { setDialog(null); load(); }} onSaved=${() => { setDialog(null); load(); }} onRefresh=${load} />`}
+    ${tplOpen && html`<${TemplatesDialog} week=${week} onClose=${() => setTplOpen(false)} onDone=${() => { setTplOpen(false); load(); }} />`}
     ${copyOpen && html`<${CopyWeekDialog} week=${week} onClose=${() => setCopyOpen(false)} onDone=${(target) => { setCopyOpen(false); go('rozvrh', { w: target }); }} />`}
     ${noteDay && html`<${DayNoteDialog} date=${noteDay} text=${data.notes[noteDay] || ''} onClose=${() => setNoteDay(null)} onSaved=${() => { setNoteDay(null); load(); }} />`}
   </div>`;
@@ -401,8 +405,9 @@ function EventForm({ ev, preset, onClose, onSaved }) {
   const isLesson = f.kind === 'lesson';
   const end = isLesson ? f.start + Number(f.len) : f.end;
   const hol = holidayOn(boot.holidays, f.date);
-  const blocks = settings.blocks || [];
-  const lenOptions = [...new Set([...lengths, ...blocks.map((b) => b.end - b.start), ...(ev && isLesson ? [ev.end - ev.start] : [])])].sort((a, b) => a - b);
+  const allBlocks = settings.blocks || [];
+  const blocks = allBlocks.filter((b) => !b.days || !b.days.length || b.days.includes(weekdayOf(f.date))); // the chosen day's blocks
+  const lenOptions = [...new Set([...lengths, ...allBlocks.map((b) => b.end - b.start), ...(ev && isLesson ? [ev.end - ev.start] : [])])].sort((a, b) => a - b);
   const pickBlock = (b) => {
     setCustomLen(false);
     setF((x) => ({ ...x, start: b.start, len: b.end - b.start, end: b.end }));

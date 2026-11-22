@@ -127,6 +127,14 @@ CREATE TABLE IF NOT EXISTS event_signups(
 	PRIMARY KEY(event_id, student_id)
 );
 CREATE INDEX IF NOT EXISTS event_signups_student ON event_signups(student_id);
+CREATE TABLE IF NOT EXISTS schedule_templates(
+	id {{ID}},
+	name TEXT NOT NULL,
+	items TEXT NOT NULL,
+	created_by BIGINT,
+	created_at TEXT NOT NULL DEFAULT {{NOW}},
+	updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS app_logins(
 	id TEXT PRIMARY KEY,
 	code TEXT NOT NULL,
@@ -382,13 +390,24 @@ type TimeBlock struct {
 	Name  string `json:"name"`
 	Start int    `json:"start"`
 	End   int    `json:"end"`
+	Days  []int  `json:"days"` // weekdays it applies to, 1 = Monday … 5 = Friday
 }
 
-// blockFor says whether start–end is exactly one of the school's time blocks.
-func (s Settings) blockFor(start, end int) bool {
+// blockFor says whether start–end on that date is exactly one of the day's blocks.
+func (s Settings) blockFor(date string, start, end int) bool {
+	t, ok := parseDate(date)
+	if !ok {
+		return false
+	}
+	wd := (int(t.Weekday())+6)%7 + 1
 	for _, b := range s.Blocks {
-		if b.Start == start && b.End == end {
-			return true
+		if b.Start != start || b.End != end {
+			continue
+		}
+		for _, d := range b.Days {
+			if d == wd {
+				return true
+			}
 		}
 	}
 	return false
@@ -429,6 +448,11 @@ func (a *App) loadSettings() Settings {
 	}
 	if s.Blocks == nil {
 		s.Blocks = []TimeBlock{}
+	}
+	for i := range s.Blocks { // blocks saved before per-day timing apply to every day
+		if len(s.Blocks[i].Days) == 0 {
+			s.Blocks[i].Days = []int{1, 2, 3, 4, 5}
+		}
 	}
 	return s
 }

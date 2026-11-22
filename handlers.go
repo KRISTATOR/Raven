@@ -548,7 +548,8 @@ func (a *App) handleSaveHoliday(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.audit(currentUser(r).ID, "update", "holiday", nil, fmt.Sprintf("Volno: %s (%s – %s)", h.Name, czDate(h.DateFrom), czDate(h.DateTo)))
-	writeJSON(w, map[string]any{"ok": true})
+	// tell the admin how many planned classes fall on the new days off
+	writeJSON(w, map[string]any{"ok": true, "classes": a.countEventsInRange(h.DateFrom, h.DateTo), "date_from": h.DateFrom, "date_to": h.DateTo})
 }
 
 func (a *App) handleDeleteHoliday(w http.ResponseWriter, r *http.Request) {
@@ -594,12 +595,13 @@ func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if len(in) > 30 {
-		writeErr(w, http.StatusBadRequest, "Nejvýše 30 bloků.")
+	if len(in) > 150 {
+		writeErr(w, http.StatusBadRequest, "Nejvýše 150 bloků (30 na den).")
 		return
 	}
 	out := []TimeBlock{}
-	seen := map[[2]int]bool{}
+	seen := map[string]bool{}
+	perDay := map[int]int{}
 	for i, b := range in {
 		b.Name = strings.TrimSpace(b.Name)
 		if len([]rune(b.Name)) > 40 {
@@ -610,14 +612,35 @@ func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, fmt.Sprintf("Blok č. %d: konec musí být po začátku.", i+1))
 			return
 		}
-		k := [2]int{b.Start, b.End}
+		days := []int{}
+		for _, d := range b.Days {
+			if d >= 1 && d <= 5 && !containsInt(days, d) {
+				days = append(days, d)
+			}
+		}
+		if len(days) == 0 {
+			days = []int{1, 2, 3, 4, 5}
+		}
+		sort.Ints(days)
+		b.Days = days
+		k := fmt.Sprint(b.Start, b.End, days)
 		if seen[k] {
 			continue
 		}
 		seen[k] = true
+		for _, d := range days {
+			perDay[d]++
+			if perDay[d] > 30 {
+				writeErr(w, http.StatusBadRequest, "Nejvýše 30 bloků na jeden den.")
+				return
+			}
+		}
 		out = append(out, b)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Days[0] != out[j].Days[0] {
+			return out[i].Days[0] < out[j].Days[0]
+		}
 		return out[i].Start < out[j].Start || (out[i].Start == out[j].Start && out[i].End < out[j].End)
 	})
 	s := a.loadSettings()
@@ -626,7 +649,16 @@ func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.audit(currentUser(r).ID, "update", "settings", nil, fmt.Sprintf("Upraveny bloky hodin (%d)", len(out)))
-	writeJSON(w, out)
+	writeJSON(w, a.loadSettings().Blocks)
+}
+
+func containsInt(xs []int, v int) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 // handleSaveLunch lets coordinators and admins move the lunch break (shown in the timetable).

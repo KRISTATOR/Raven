@@ -2,6 +2,7 @@ import {
   html, useState, useEffect, useApp, api, go, Modal, Field, ErrorLine, PageHead, Empty, Swatch, InkPicker, useAsync,
   today, parseISO, iso, addDays, fmtDate, hm, toMin, timeVal, daysBetween, atLeast, ROLE_LABEL, ROLE_INFO, DAYS, cmpCz, plural, TimeInput,
 } from './lib.js';
+import { TemplatesTab } from './templates.js';
 
 const TABS = [
   ['ucty', 'Uživatelé', 'admin'],
@@ -9,6 +10,7 @@ const TABS = [
   ['volno', 'Volné dny', 'admin'],
   ['bloky', 'Bloky hodin', 'coordinator'],
   ['predmety', 'Předměty a místnosti', 'coordinator'],
+  ['sablony', 'Šablony rozvrhu', 'admin'],
   ['historie', 'Historie změn', 'coordinator'],
   ['zaloha', 'Zálohy', 'admin'],
 ];
@@ -24,6 +26,7 @@ export function AdminPage({ params }) {
     case 'volno': body = html`<${HolidaysTab} />`; break;
     case 'bloky': body = html`<${BlocksTab} />`; break;
     case 'predmety': body = html`<${SubjectsTab} />`; break;
+    case 'sablony': body = html`<${TemplatesTab} />`; break;
     case 'historie': body = html`<${HistoryTab} />`; break;
     case 'zaloha': body = html`<${BackupTab} />`; break;
   }
@@ -59,47 +62,111 @@ function LunchForm() {
 // ---------- time blocks: ready-made class times to pick from when planning ----------
 function BlocksTab() {
   const app = useApp();
-  const [rows, setRows] = useState(() => app.settings.blocks.map((b) => ({ ...b })));
+  const { settings } = app;
+  // editor state: one list of blocks per weekday (1 = Monday … 5 = Friday)
+  const fromSettings = () => {
+    const by = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+    for (const b of settings.blocks) for (const d of (b.days && b.days.length ? b.days : [1, 2, 3, 4, 5])) by[d].push({ name: b.name, start: b.start, end: b.end });
+    for (const d of [1, 2, 3, 4, 5]) by[d].sort((x, y) => x.start - y.start);
+    return by;
+  };
+  const [byDay, setByDay] = useState(fromSettings);
+  const [day, setDay] = useState(1);
+  const [hover, setHover] = useState(null);
+  const [copyTo, setCopyTo] = useState([]);
+  const [dirty, setDirty] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const rows = byDay[day];
+  const change = (d, list) => { setByDay({ ...byDay, [d]: list }); setDirty(true); };
+  const set = (i, k, v) => change(day, rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const add = () => {
-    const last = rows[rows.length - 1];
-    const start = last ? last.end + 10 : app.settings.day_start;
-    setRows([...rows, { name: '', start, end: Math.min(start + 45, 24 * 60 - 5) }]);
+    const last = [...rows].sort((x, y) => x.end - y.end)[rows.length - 1];
+    const start = last ? last.end + 10 : settings.day_start;
+    change(day, [...rows, { name: '', start, end: Math.min(start + 45, 24 * 60 - 5) }]);
   };
-  const save = async (e) => {
-    e.preventDefault(); setErr('');
-    for (const [i, r] of rows.entries()) if (!(r.end > r.start)) { setErr(`Blok č. ${i + 1}: konec musí být po začátku.`); return; }
+  const copy = () => {
+    if (!copyTo.length) return;
+    const next = { ...byDay };
+    for (const d of copyTo) next[d] = rows.map((r) => ({ ...r }));
+    setByDay(next); setDirty(true); setCopyTo([]);
+    app.toast(`Bloky z ${DAYS[day - 1]}ka zkopírovány na ${copyTo.map((d) => DAYS[d - 1]).join(', ')}. Nezapomeňte uložit.`);
+  };
+  const save = async () => {
+    setErr('');
+    for (const d of [1, 2, 3, 4, 5]) for (const [i, r] of byDay[d].entries()) if (!(r.end > r.start)) { setDay(d); setErr(`${DAYS[d - 1]}, blok č. ${i + 1}: konec musí být po začátku.`); return; }
+    const body = [];
+    for (const d of [1, 2, 3, 4, 5]) for (const r of byDay[d]) body.push({ name: r.name, start: Number(r.start), end: Number(r.end), days: [d] });
     setBusy(true);
-    try {
-      const out = await api('PUT', '/api/settings/blocks', rows.map((r) => ({ name: r.name, start: Number(r.start), end: Number(r.end) })));
-      setRows(out.map((b) => ({ ...b }))); app.toast('Bloky hodin uloženy.'); app.reloadBoot();
-    } catch (x) { setErr(x.message); }
+    try { await api('PUT', '/api/settings/blocks', body); app.toast('Bloky hodin uloženy.'); setDirty(false); app.reloadBoot(); } catch (x) { setErr(x.message); }
     setBusy(false);
   };
+  // overlapping blocks within a day are flagged (allowed, but usually a typo)
+  const overlaps = (list) => list.map((r, i) => list.some((o, j) => j !== i && o.start < r.end && o.end > r.start));
+  const ov = overlaps(rows);
   return html`<${LunchForm} />
-  <section class="section">
-    <div class="section-head"><h2>Bloky hodin <span class="count">${rows.length}</span></h2></div>
-    <p class="muted">Pevné časy hodin, ze kterých si vyučující při plánování jen vyberou – nemusí pokaždé psát začátek a konec. Blok platí i tehdy, když jeho délka není mezi povolenými délkami. Upravovat je může koordinátor a správce.</p>
-    <form onSubmit=${save}>
-      ${rows.length === 0 ? html`<${Empty}>Zatím žádné bloky. Přidejte první tlačítkem níže.<//>` : html`
-      <div class="blocks-grid">
-        <span class="field-label">Název <em>nepovinné</em></span><span class="field-label">Začátek</span><span class="field-label">Konec</span><span class="field-label">Délka</span><span></span>
-        ${rows.map((r, i) => html`
-          <input value=${r.name} maxlength="40" placeholder=${(i + 1) + '. blok'} onInput=${(e) => set(i, 'name', e.target.value)} aria-label=${'Název bloku ' + (i + 1)} />
-          <${TimeInput} value=${r.start} onChange=${(v) => v != null && set(i, 'start', v)} />
-          <${TimeInput} value=${r.end} onChange=${(v) => v != null && set(i, 'end', v)} />
-          <span class=${'mono small' + (r.end > r.start ? '' : ' bad')}>${r.end > r.start ? (r.end - r.start) + ' min' : '—'}</span>
-          <button type="button" class="btn btn-sq" title="Odebrat blok" onClick=${() => setRows(rows.filter((_, j) => j !== i))}>×</button>`)}
+  <section class="section blocks">
+    <div class="section-head"><h2>Bloky hodin</h2>
+      <div class="section-aside">${dirty && html`<span class="unsaved">neuložené změny</span>`}<button class="btn btn-primary" disabled=${busy || !dirty} onClick=${save}>Uložit bloky</button></div></div>
+    <p class="muted">Pevné časy hodin, ze kterých si vyučující při plánování jen vyberou. Každý den může mít jiný počet bloků i jiné časy. Blok platí i tehdy, když jeho délka není mezi povolenými délkami. Upravovat je může koordinátor a správce.</p>
+
+    <${BlockTimeline} byDay=${byDay} day=${day} hover=${hover} onDay=${setDay} />
+
+    <div class="seg block-days" role="tablist">
+      ${[1, 2, 3, 4, 5].map((d) => html`<button type="button" role="tab" aria-selected=${d === day} class=${'seg-b' + (d === day ? ' on' : '')} onClick=${() => setDay(d)}>
+        ${DAYS[d - 1]} <span class="bd-count">${byDay[d].length}</span></button>`)}
+    </div>
+
+    ${rows.length === 0 ? html`<${Empty}>${DAYS[day - 1][0].toUpperCase() + DAYS[day - 1].slice(1)} zatím nemá žádné bloky.<//>` : html`
+    <div class="blocks-grid">
+      <span class="field-label">Název <em>nepovinné</em></span><span class="field-label">Začátek</span><span class="field-label">Konec</span><span class="field-label">Délka</span><span></span>
+      ${rows.map((r, i) => html`
+        <input value=${r.name} maxlength="40" placeholder=${(i + 1) + '. blok'} onInput=${(e) => set(i, 'name', e.target.value)} onFocus=${() => setHover(i)} onBlur=${() => setHover(null)} aria-label=${'Název bloku ' + (i + 1)} />
+        <span onMouseEnter=${() => setHover(i)} onMouseLeave=${() => setHover(null)}><${TimeInput} value=${r.start} onChange=${(v) => v != null && set(i, 'start', v)} /></span>
+        <span onMouseEnter=${() => setHover(i)} onMouseLeave=${() => setHover(null)}><${TimeInput} value=${r.end} onChange=${(v) => v != null && set(i, 'end', v)} /></span>
+        <span class=${'mono small' + (r.end > r.start && !ov[i] ? '' : ' bad')}>${r.end > r.start ? (r.end - r.start) + ' min' : '—'}${ov[i] ? ' · překryv' : ''}</span>
+        <button type="button" class="btn btn-sq" title="Odebrat blok" onClick=${() => change(day, rows.filter((_, j) => j !== i))}>×</button>`)}
+    </div>`}
+    <${ErrorLine} error=${err} />
+    <div class="block-actions">
+      <button type="button" class="btn" onClick=${add}>+ Přidat blok</button>
+      ${rows.length > 0 && html`<div class="block-copy">
+        <span>Zkopírovat ${DAYS[day - 1]} na:</span>
+        ${[1, 2, 3, 4, 5].filter((d) => d !== day).map((d) => html`<label class="check"><input type="checkbox" checked=${copyTo.includes(d)} onChange=${(e) => setCopyTo(e.target.checked ? [...copyTo, d] : copyTo.filter((x) => x !== d))} /> ${DAYS[d - 1]}</label>`)}
+        <button type="button" class="btn" disabled=${!copyTo.length} onClick=${copy}>Zkopírovat</button>
       </div>`}
-      <${ErrorLine} error=${err} />
-      <div class="form-actions">
-        <button type="button" class="btn" onClick=${add}>+ Přidat blok</button>
-        <button class="btn btn-primary" disabled=${busy}>Uložit bloky</button>
-      </div>
-    </form>
+    </div>
   </section>`;
+}
+
+// The week at a glance: every day's blocks on one time axis, with morning circles and lunch.
+function BlockTimeline({ byDay, day, hover, onDay }) {
+  const { settings } = useApp();
+  const all = [1, 2, 3, 4, 5].flatMap((d) => byDay[d]);
+  const lo = Math.floor(Math.min(settings.circle_start || settings.day_start, settings.day_start, ...all.map((r) => r.start)) / 60) * 60;
+  const hi = Math.ceil(Math.max(settings.day_end, settings.lunch_end || 0, ...all.map((r) => r.end)) / 60) * 60;
+  const pct = (m) => ((Math.min(Math.max(m, lo), hi) - lo) / (hi - lo)) * 100;
+  const hours = [];
+  for (let m = lo; m <= hi; m += 60) hours.push(m);
+  const band = (from, to, cls, label) => to > from && html`<div class=${'bt-band ' + cls} style=${`left:${pct(from)}%;width:${pct(to) - pct(from)}%`}><span>${label}</span></div>`;
+  return html`<div class="bt" aria-label="Bloky v týdnu">
+    <div class="bt-axis"><span></span><div class="bt-ticks">${hours.map((m) => html`<span style=${`left:${pct(m)}%`}>${hm(m)}</span>`)}</div></div>
+    ${[1, 2, 3, 4, 5].map((d) => {
+      const list = byDay[d];
+      const ov = list.map((r, i) => list.some((o, j) => j !== i && o.start < r.end && o.end > r.start));
+      return html`<div class=${'bt-row' + (d === day ? ' on' : '')} onClick=${() => onDay(d)} title=${'Upravit ' + DAYS[d - 1]}>
+        <span class="bt-day">${DAYS[d - 1]}</span>
+        <div class="bt-track">
+          ${hours.map((m) => html`<i class="bt-line" style=${`left:${pct(m)}%`}></i>`)}
+          ${band(settings.circle_start, settings.circle_end, 'bt-circle', 'kruhy')}
+          ${band(settings.lunch_start, settings.lunch_end, 'bt-lunch', 'oběd')}
+          ${list.map((r, i) => html`<div class=${'bt-block' + (ov[i] ? ' is-over' : '') + (d === day && hover === i ? ' is-hover' : '')} style=${`left:${pct(r.start)}%;width:${Math.max(pct(r.end) - pct(r.start), 0.6)}%`}>
+            <b>${r.name || (i + 1) + '.'}</b><span>${hm(r.start)}–${hm(r.end)}</span>
+          </div>`)}
+        </div>
+      </div>`;
+    })}
+  </div>`;
 }
 
 // ---------- users ----------
@@ -330,7 +397,11 @@ function HolidaysTab() {
   const sy = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1;
   const add = async (e) => {
     e.preventDefault();
-    try { await api('POST', '/api/holidays', f); setF({ name: '', date_from: f.date_from, date_to: f.date_from }); app.reloadBoot(); setErr(''); } catch (x) { setErr(x.message); }
+    try {
+      const r = await api('POST', '/api/holidays', f);
+      setF({ name: '', date_from: f.date_from, date_to: f.date_from }); app.reloadBoot(); setErr('');
+      await offerClear(app, r, f.name);
+    } catch (x) { setErr(x.message); }
   };
   const del = async (h) => {
     if (!await app.confirm({ title: `Smazat „${h.name}“?`, confirm: 'Smazat', danger: true })) return;
@@ -374,12 +445,28 @@ function HolidaysTab() {
   </div>`;
 }
 
+// After a day off is saved: offer to cancel the classes already planned on those days.
+async function offerClear(app, r, name) {
+  if (!r || !r.classes) return;
+  const ok = await app.confirm({
+    title: `Zrušit ${plural(r.classes, 'naplánovanou hodinu', 'naplánované hodiny', 'naplánovaných hodin')}?`,
+    text: `Na ${fmtDate(r.date_from)}${r.date_to !== r.date_from ? ' – ' + fmtDate(r.date_to) : ''} (${name}) už jsou v rozvrhu hodiny. Mají se zrušit? Kdyby bylo potřeba, obnovíte je v Historii změn.`,
+    confirm: 'Zrušit hodiny', cancel: 'Ponechat', danger: true,
+  });
+  if (!ok) return;
+  try {
+    const c = await api('POST', '/api/events/clear-range', { from: r.date_from, to: r.date_to, reason: name });
+    app.toast(`Zrušeno: ${plural(c.removed, 'hodina', 'hodiny', 'hodin')}.`);
+  } catch (x) { app.toast(x.message, 'err'); }
+}
+
 function HolidayDialog({ h, onClose, onSaved }) {
+  const app = useApp();
   const [f, setF] = useState({ ...h });
   const [err, setErr] = useState('');
   const save = async (e) => {
     e.preventDefault();
-    try { await api('PUT', `/api/holidays/${h.id}`, f); onSaved(); } catch (x) { setErr(x.message); }
+    try { const r = await api('PUT', `/api/holidays/${h.id}`, f); onSaved(); await offerClear(app, r, f.name); } catch (x) { setErr(x.message); }
   };
   return html`<${Modal} title="Upravit volno" onClose=${onClose}>
     <form class="form-grid" onSubmit=${save}>

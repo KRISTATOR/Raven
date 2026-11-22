@@ -324,6 +324,12 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("PUT /api/events/{id}", a.auth(T, a.handleUpdateEvent))
 	mux.HandleFunc("DELETE /api/events/{id}", a.auth(T, a.handleDeleteEvent))
 	mux.HandleFunc("POST /api/events/copy-week", a.auth(T, a.handleCopyWeek))
+	mux.HandleFunc("POST /api/events/clear-range", a.auth(A, a.handleClearRange))
+	mux.HandleFunc("GET /api/templates", a.auth(A, a.handleListTemplates))
+	mux.HandleFunc("POST /api/templates", a.auth(A, a.handleCreateTemplate))
+	mux.HandleFunc("PUT /api/templates/{id}", a.auth(A, a.handleRenameTemplate))
+	mux.HandleFunc("DELETE /api/templates/{id}", a.auth(A, a.handleDeleteTemplate))
+	mux.HandleFunc("POST /api/templates/{id}/apply", a.auth(A, a.handleApplyTemplate))
 	mux.HandleFunc("POST /api/events/{id}/signup", a.auth(S, a.handleSignup))
 	mux.HandleFunc("GET /api/events/{id}/signups", a.auth(T, a.handleEventSignups))
 
