@@ -660,6 +660,21 @@ func UnmarshalXML(r io.Reader, withIcon bool) (*XML, error) {
 		sort.Sort(byType(el.attrs))
 		sort.Sort(byNamespace(el.attrs))
 		sort.Sort(byName(el.attrs))
+		// Raven: Android's parser (libandroidfw AttributeFinder) expects attributes in
+		// ascending resource-ID order, as aapt writes them; attributes without an ID last.
+		rid := func(at *Attribute) uint32 {
+			if int(at.Name) < len(bx.Map.rs) {
+				return uint32(bx.Map.rs[at.Name])
+			}
+			return 0
+		}
+		sort.SliceStable(el.attrs, func(i, j int) bool {
+			ri, rj := rid(el.attrs[i]), rid(el.attrs[j])
+			if ri == 0 || rj == 0 {
+				return ri != 0 && rj == 0
+			}
+			return ri < rj
+		})
 		for _, child := range el.Children {
 			asort(child)
 		}

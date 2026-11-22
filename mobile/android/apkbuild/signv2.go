@@ -14,6 +14,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math/big"
+	"time"
 )
 
 const (
@@ -25,12 +26,20 @@ const (
 // signingCert recreates the self-signed certificate that cert.go puts into the v1
 // signature, so both schemes carry the same certificate.
 func signingCert(key *rsa.PrivateKey) ([]byte, error) {
-	tmpl := &x509.Certificate{
+	tmpl := certTemplate()
+	return x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+}
+
+// certTemplate is fixed, so the same key always yields the same certificate – Android
+// only accepts app updates signed with an identical certificate.
+func certTemplate() *x509.Certificate {
+	return &x509.Certificate{
 		SerialNumber:       big.NewInt(0x5462c4dd),
 		SignatureAlgorithm: x509.SHA256WithRSA,
-		Subject:            pkix.Name{CommonName: "gomobile"},
+		Subject:            pkix.Name{CommonName: "Raven", Organization: []string{"Raven"}, Country: []string{"CZ"}},
+		NotBefore:          time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:           time.Date(2076, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
-	return x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
 }
 
 func u32(v int) []byte {

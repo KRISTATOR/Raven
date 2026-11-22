@@ -2,8 +2,8 @@
 <!-- Raven for Android. uses-sdk (min 21, target from apkbuild/binres/sdk.go) and the icon are added by apkbuild. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cz.raven.app"
-    android:versionCode="1"
-    android:versionName="1.0">
+    android:versionCode="2"
+    android:versionName="1.0.1">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="Raven"

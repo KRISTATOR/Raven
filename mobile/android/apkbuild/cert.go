@@ -12,7 +12,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"io"
-	"math/big"
 	"time"
 )
 
@@ -22,14 +21,10 @@ import (
 // We prepare the certificate using the x509 package, read it back in
 // to our custom data type and then write it back out with the signature.
 func signPKCS7(rand io.Reader, priv *rsa.PrivateKey, msg []byte) ([]byte, error) {
-	const serialNumber = 0x5462c4dd // arbitrary
-	name := pkix.Name{CommonName: "gomobile"}
-
-	template := &x509.Certificate{
-		SerialNumber:       big.NewInt(serialNumber),
-		SignatureAlgorithm: x509.SHA256WithRSA, // Raven: same certificate as the v2 signature (signv2.go)
-		Subject:            name,
-	}
+	// Raven: the certificate is shared with the v2 signature (certTemplate in signv2.go).
+	template := certTemplate()
+	name := template.Subject
+	serialNumber := int(template.SerialNumber.Int64())
 
 	b, err := x509.CreateCertificate(rand, template, template, priv.Public(), priv)
 	if err != nil {

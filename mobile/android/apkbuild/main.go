@@ -90,7 +90,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	signed, err := signV2(buf.Bytes(), key, cert)
+	norm, err := normalizeZip(buf.Bytes())
+	if err != nil {
+		log.Fatalf("zip layout: %v", err)
+	}
+	signed, err := signV2(norm, key, cert)
 	if err != nil {
 		log.Fatalf("v2 signature: %v", err)
 	}
