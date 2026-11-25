@@ -1071,8 +1071,6 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
 .approve-ok span { color: var(--green); font-weight: 700; margin-right: 4px; }
 @media (max-width: 760px) { .auth { padding: calc(env(safe-area-inset-top) + 16px) 16px 24px; justify-content: flex-start; } .auth-card { border-width: 2px; } }
 
-.lunch-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
-.lunch-form .field { width: 130px; }
 
 /* staff account opened on a phone */
 .pc-only-icon { width: 56px; height: 56px; fill: none; stroke: var(--yellow); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; align-self: center; }
@@ -1132,3 +1130,33 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
 .block-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .block-copy { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; color: var(--ink-2); }
 .unsaved { font: 12px var(--mono); color: var(--yellow); margin-right: 10px; }
+
+/* ---------- Nastavení rozvrhu ---------- */
+.sched-settings { padding-bottom: 70px; }
+.subnav { position: sticky; top: var(--top-h, 59px); z-index: 20; display: flex; gap: 4px; flex-wrap: wrap; padding: 8px 0; margin: -6px 0 14px; background: var(--paper); border-bottom: 1px solid var(--rule-faint); }
+.subnav button { background: none; border: 1px solid transparent; color: var(--ink-2); padding: 6px 12px; font-weight: 600; font-size: 14px; cursor: pointer; }
+.subnav button:hover { color: var(--ink); border-color: var(--rule-soft); }
+.sched-settings > .section, .sched-settings > div > .section { scroll-margin-top: calc(var(--top-h, 59px) + 56px); }
+#sekce-volno, #sekce-sablony { scroll-margin-top: calc(var(--top-h, 59px) + 56px); }
+.day-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.day-group { border: 1px solid var(--rule-soft); background: var(--paper-hi); padding: 8px 12px 12px; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; min-width: 0; }
+.day-group legend { padding: 0 6px; font: 600 11.5px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); }
+.day-group .field { min-width: 0; }
+.day-group .time-input, .day-group select { width: 100%; }
+.time-input:disabled, .day-group select:disabled { opacity: .55; cursor: not-allowed; }
+.savebar { position: fixed; right: 24px; bottom: 18px; z-index: 60; display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px;
+  background: var(--paper-hi); border: 1px solid var(--yellow); box-shadow: 0 10px 30px rgba(0, 0, 0, .35); max-width: calc(100vw - 32px); }
+.savebar > span { font-size: 14px; }
+.bt-off { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--ink-3) 10%, transparent); }
+.bt-day small { display: block; font: 10px var(--mono); color: var(--cedar); text-transform: uppercase; letter-spacing: .05em; }
+.bt-key { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0 0 84px; font-size: 12.5px; color: var(--ink-2); }
+.bt-key span { display: inline-flex; align-items: center; gap: 6px; }
+.bt-key i { display: inline-block; width: 16px; height: 10px; border: 1px solid var(--rule-soft); }
+.bt-key .k-teach { background: var(--paper); }
+.bt-key .k-circle { background: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--ink-3) 40%, transparent) 3px 5px); }
+.bt-key .k-lunch { background: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--cedar) 55%, transparent) 3px 5px); }
+.bt-key .k-block { background: color-mix(in srgb, var(--yellow) 26%, var(--paper-2)); border-color: var(--yellow); }
+.past-hol { margin-top: 12px; }
+.past-hol summary { cursor: pointer; font-size: 14px; color: var(--ink-2); padding: 6px 0; }
+@media (max-width: 1100px) { .day-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .day-grid { grid-template-columns: 1fr; } .savebar { left: 16px; right: 16px; transform: none; } }

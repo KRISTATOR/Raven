@@ -101,8 +101,8 @@ export const ROLE_LABEL = { student: 'Žák', teacher: 'Učitel', coordinator: '
 export const ROLE_INFO = {
   student: 'Vidí rozvrh a své osobní cíle. Nic neupravuje.',
   teacher: 'Přidává, upravuje a maže jen své hodiny. Zapisuje konzultace a vede cíle své tutorské skupiny.',
-  coordinator: 'Navíc upravuje a maže hodiny všech, spravuje žáky, skupiny, předměty a místnosti a vidí historii změn s možností obnovy.',
-  admin: 'Navíc spravuje účty, délky hodin, časy dne, výjezdový den, volné dny a zálohy.',
+  coordinator: 'Navíc upravuje a maže hodiny všech, spravuje žáky, skupiny, předměty a místnosti, bloky hodin a čas oběda a vidí historii změn s možností obnovy.',
+  admin: 'Navíc spravuje účty, nastavení školy, časy dne, délky hodin, výjezdový den, volné dny, šablony rozvrhu a zálohy.',
 };
 
 // ---------- colours (risograph ink palette) ----------
@@ -254,7 +254,7 @@ export function parseTime(t) {
   if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
   return h * 60 + m;
 }
-export function TimeInput({ value, onChange, required, step = 5 }) {
+export function TimeInput({ value, onChange, required, disabled, step = 5 }) {
   const fmt = (v) => (v == null ? '' : hm(v));
   const [txt, setTxt] = useState(fmt(value));
   useEffect(() => { setTxt(fmt(value)); }, [value]);
@@ -272,7 +272,7 @@ export function TimeInput({ value, onChange, required, step = 5 }) {
       onChange(m); setTxt(fmt(m));
     }
   };
-  return html`<input class="time-input" inputmode="numeric" autocomplete="off" placeholder="h:mm" required=${required}
+  return html`<input class="time-input" inputmode="numeric" autocomplete="off" placeholder="h:mm" required=${required} disabled=${disabled}
     value=${txt} onInput=${(e) => setTxt(e.target.value)} onBlur=${commit} onKeyDown=${onKey} />`;
 }
 

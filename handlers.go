@@ -165,43 +165,21 @@ func (a *App) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 // ---------- settings ----------
 
 func (a *App) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
-	var s Settings
-	if !readJSON(w, r, &s) {
+	var in Settings
+	if !readJSON(w, r, &in) {
 		return
 	}
-	lens := []int{}
-	seen := map[int]bool{}
-	for _, l := range s.LessonLengths {
-		if l >= 5 && l <= 600 && !seen[l] {
-			lens = append(lens, l)
-			seen[l] = true
-		}
-	}
-	sort.Ints(lens)
-	if len(lens) == 0 {
-		writeErr(w, http.StatusBadRequest, "Zadejte alespoň jednu délku hodiny.")
-		return
-	}
-	s.LessonLengths = lens
-	if s.DayEnd <= s.DayStart {
-		writeErr(w, http.StatusBadRequest, "Konec dne musí být po začátku výuky.")
-		return
-	}
-	if s.CircleEnd < s.CircleStart || s.LunchEnd < s.LunchStart {
-		writeErr(w, http.StatusBadRequest, "Zkontrolujte časy ranních kruhů a oběda.")
-		return
-	}
-	if s.TripWeekday < 0 || s.TripWeekday > 5 {
-		s.TripWeekday = 0
-	}
-	if s.SlotStep <= 0 {
-		s.SlotStep = 5
-	}
-	s.SchoolName = strings.TrimSpace(s.SchoolName)
-	s.Blocks = a.loadSettings().Blocks // edited only through /api/settings/blocks
-	s.GoogleClientID = strings.TrimSpace(s.GoogleClientID)
-	s.TeacherDomains = normDomains(s.TeacherDomains)
-	s.StudentDomains = normDomains(s.StudentDomains)
+	// School settings only; the school day, lesson lengths and blocks are saved
+	// through /api/settings/schedule and kept as they are.
+	s := a.loadSettings()
+	s.SchoolName = strings.TrimSpace(in.SchoolName)
+	s.Grades = in.Grades
+	s.GoogleClientID = strings.TrimSpace(in.GoogleClientID)
+	s.TeacherDomains = normDomains(in.TeacherDomains)
+	s.StudentDomains = normDomains(in.StudentDomains)
+	s.NamesFromEmail = in.NamesFromEmail
+	s.AIStudents = in.AIStudents
+	s.AITeachers = in.AITeachers
 	if err := a.saveSettings(s); dbErr(w, err) {
 		return
 	}
@@ -588,16 +566,100 @@ func (a *App) handleSaveDayNote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
-// ---------- time blocks ----------
+// ---------- schedule settings: school day, lesson lengths, time blocks ----------
 
-func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
-	var in []TimeBlock
+// handleSaveSchedule saves everything about the school day in one go. Admins may change
+// all of it; coordinators the lunch break and the time blocks (the rest is kept).
+func (a *App) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
+	me := currentUser(r)
+	var in struct {
+		DayStart      int         `json:"day_start"`
+		DayEnd        int         `json:"day_end"`
+		CircleStart   int         `json:"circle_start"`
+		CircleEnd     int         `json:"circle_end"`
+		LunchStart    int         `json:"lunch_start"`
+		LunchEnd      int         `json:"lunch_end"`
+		TripWeekday   int         `json:"trip_weekday"`
+		SlotStep      int         `json:"slot_step"`
+		LessonLengths []int       `json:"lesson_lengths"`
+		Blocks        []TimeBlock `json:"blocks"`
+	}
 	if !readJSON(w, r, &in) {
 		return
 	}
-	if len(in) > 150 {
-		writeErr(w, http.StatusBadRequest, "Nejvýše 150 bloků (30 na den).")
+	s := a.loadSettings()
+	old := s
+	if in.LunchStart < 0 || in.LunchEnd > 24*60 || in.LunchEnd < in.LunchStart {
+		writeErr(w, http.StatusBadRequest, "Konec oběda musí být po jeho začátku.")
 		return
+	}
+	s.LunchStart, s.LunchEnd = in.LunchStart, in.LunchEnd
+	if me.atLeast("admin") {
+		lens := []int{}
+		seen := map[int]bool{}
+		for _, l := range in.LessonLengths {
+			if l >= 5 && l <= 600 && !seen[l] {
+				lens = append(lens, l)
+				seen[l] = true
+			}
+		}
+		sort.Ints(lens)
+		if len(lens) == 0 {
+			writeErr(w, http.StatusBadRequest, "Zadejte alespoň jednu povolenou délku hodiny.")
+			return
+		}
+		if in.DayEnd <= in.DayStart {
+			writeErr(w, http.StatusBadRequest, "Konec dne musí být po začátku výuky.")
+			return
+		}
+		if in.CircleEnd < in.CircleStart {
+			writeErr(w, http.StatusBadRequest, "Konec ranních kruhů musí být po jejich začátku.")
+			return
+		}
+		if in.TripWeekday < 0 || in.TripWeekday > 5 {
+			in.TripWeekday = 0
+		}
+		if in.SlotStep != 5 && in.SlotStep != 10 && in.SlotStep != 15 {
+			in.SlotStep = 5
+		}
+		s.LessonLengths = lens
+		s.DayStart, s.DayEnd = in.DayStart, in.DayEnd
+		s.CircleStart, s.CircleEnd = in.CircleStart, in.CircleEnd
+		s.TripWeekday, s.SlotStep = in.TripWeekday, in.SlotStep
+	}
+	blocks, msg := normalizeBlocks(in.Blocks)
+	if msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
+	s.Blocks = blocks
+	if err := a.saveSettings(s); dbErr(w, err) {
+		return
+	}
+	var parts []string
+	if s.DayStart != old.DayStart || s.DayEnd != old.DayEnd || s.CircleStart != old.CircleStart || s.CircleEnd != old.CircleEnd ||
+		s.TripWeekday != old.TripWeekday || s.SlotStep != old.SlotStep || fmt.Sprint(s.LessonLengths) != fmt.Sprint(old.LessonLengths) {
+		parts = append(parts, "školní den")
+	}
+	if s.LunchStart != old.LunchStart || s.LunchEnd != old.LunchEnd {
+		parts = append(parts, fmt.Sprintf("oběd %s–%s", hmGo(s.LunchStart), hmGo(s.LunchEnd)))
+	}
+	if fmt.Sprint(s.Blocks) != fmt.Sprint(old.Blocks) {
+		parts = append(parts, fmt.Sprintf("bloky hodin (%d)", len(s.Blocks)))
+	}
+	if len(parts) > 0 {
+		a.audit(me.ID, "update", "settings", nil, "Nastavení rozvrhu: "+strings.Join(parts, ", "))
+	}
+	writeJSON(w, a.loadSettings())
+}
+
+func hmGo(m int) string { return fmt.Sprintf("%d:%02d", m/60, m%60) }
+
+// normalizeBlocks checks and tidies the time blocks: valid times, weekdays 1–5,
+// no exact duplicates, at most 30 per day; sorted by day and start.
+func normalizeBlocks(in []TimeBlock) ([]TimeBlock, string) {
+	if len(in) > 150 {
+		return nil, "Nejvýše 150 bloků (30 na den)."
 	}
 	out := []TimeBlock{}
 	seen := map[string]bool{}
@@ -605,12 +667,10 @@ func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
 	for i, b := range in {
 		b.Name = strings.TrimSpace(b.Name)
 		if len([]rune(b.Name)) > 40 {
-			writeErr(w, http.StatusBadRequest, "Název bloku může mít nejvýše 40 znaků.")
-			return
+			return nil, "Název bloku může mít nejvýše 40 znaků."
 		}
 		if b.Start < 0 || b.End > 24*60 || b.End <= b.Start {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("Blok č. %d: konec musí být po začátku.", i+1))
-			return
+			return nil, fmt.Sprintf("Blok č. %d: konec musí být po začátku.", i+1)
 		}
 		days := []int{}
 		for _, d := range b.Days {
@@ -631,8 +691,7 @@ func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
 		for _, d := range days {
 			perDay[d]++
 			if perDay[d] > 30 {
-				writeErr(w, http.StatusBadRequest, "Nejvýše 30 bloků na jeden den.")
-				return
+				return nil, "Nejvýše 30 bloků na jeden den."
 			}
 		}
 		out = append(out, b)
@@ -643,13 +702,7 @@ func (a *App) handleSaveBlocks(w http.ResponseWriter, r *http.Request) {
 		}
 		return out[i].Start < out[j].Start || (out[i].Start == out[j].Start && out[i].End < out[j].End)
 	})
-	s := a.loadSettings()
-	s.Blocks = out
-	if err := a.saveSettings(s); dbErr(w, err) {
-		return
-	}
-	a.audit(currentUser(r).ID, "update", "settings", nil, fmt.Sprintf("Upraveny bloky hodin (%d)", len(out)))
-	writeJSON(w, a.loadSettings().Blocks)
+	return out, ""
 }
 
 func containsInt(xs []int, v int) bool {
@@ -660,27 +713,3 @@ func containsInt(xs []int, v int) bool {
 	}
 	return false
 }
-
-// handleSaveLunch lets coordinators and admins move the lunch break (shown in the timetable).
-func (a *App) handleSaveLunch(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Start int `json:"lunch_start"`
-		End   int `json:"lunch_end"`
-	}
-	if !readJSON(w, r, &body) {
-		return
-	}
-	if body.Start < 0 || body.End > 24*60 || body.End < body.Start {
-		writeErr(w, http.StatusBadRequest, "Konec oběda musí být po jeho začátku.")
-		return
-	}
-	s := a.loadSettings()
-	s.LunchStart, s.LunchEnd = body.Start, body.End
-	if err := a.saveSettings(s); dbErr(w, err) {
-		return
-	}
-	a.audit(currentUser(r).ID, "update", "settings", nil, fmt.Sprintf("Oběd: %s–%s", hmGo(body.Start), hmGo(body.End)))
-	writeJSON(w, map[string]int{"lunch_start": s.LunchStart, "lunch_end": s.LunchEnd})
-}
-
-func hmGo(m int) string { return fmt.Sprintf("%d:%02d", m/60, m%60) }

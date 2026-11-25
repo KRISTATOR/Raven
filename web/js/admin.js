@@ -7,26 +7,26 @@ import { TemplatesTab } from './templates.js';
 const TABS = [
   ['ucty', 'Uživatelé', 'admin'],
   ['nastaveni', 'Nastavení školy', 'admin'],
-  ['volno', 'Volné dny', 'admin'],
-  ['bloky', 'Bloky hodin', 'coordinator'],
+  ['rozvrh', 'Nastavení rozvrhu', 'coordinator'],
   ['predmety', 'Předměty a místnosti', 'coordinator'],
-  ['sablony', 'Šablony rozvrhu', 'admin'],
   ['historie', 'Historie změn', 'coordinator'],
   ['zaloha', 'Zálohy', 'admin'],
 ];
+// tabs that are now sections of "Nastavení rozvrhu" (old links still land in the right place)
+const MOVED = { bloky: 'bloky', volno: 'volno', sablony: 'sablony', den: 'den' };
 
 export function AdminPage({ params }) {
   const { me } = useApp();
   const tabs = TABS.filter(([, , r]) => atLeast(me, r));
-  const tab = tabs.find(([k]) => k === params.tab) ? params.tab : tabs[0][0];
+  const want = MOVED[params.tab] ? 'rozvrh' : params.tab;
+  const section = MOVED[params.tab] || params.sekce;
+  const tab = tabs.find(([k]) => k === want) ? want : tabs[0][0];
   let body;
   switch (tab) {
     case 'ucty': body = html`<${UsersTab} />`; break;
     case 'nastaveni': body = html`<${SettingsTab} />`; break;
-    case 'volno': body = html`<${HolidaysTab} />`; break;
-    case 'bloky': body = html`<${BlocksTab} />`; break;
+    case 'rozvrh': body = html`<${ScheduleSettings} section=${section} />`; break;
     case 'predmety': body = html`<${SubjectsTab} />`; break;
-    case 'sablony': body = html`<${TemplatesTab} />`; break;
     case 'historie': body = html`<${HistoryTab} />`; break;
     case 'zaloha': body = html`<${BackupTab} />`; break;
   }
@@ -37,97 +37,152 @@ export function AdminPage({ params }) {
   </div>`;
 }
 
-// ---------- lunch break (coordinators and admins) ----------
-function LunchForm() {
-  const app = useApp();
-  const [f, setF] = useState({ lunch_start: app.settings.lunch_start, lunch_end: app.settings.lunch_end });
-  const [err, setErr] = useState('');
-  const save = async (e) => {
-    e.preventDefault(); setErr('');
-    if (f.lunch_end < f.lunch_start) { setErr('Konec oběda musí být po jeho začátku.'); return; }
-    try { await api('PUT', '/api/settings/lunch', f); app.toast('Čas oběda uložen.'); app.reloadBoot(); } catch (x) { setErr(x.message); }
-  };
-  return html`<section class="section">
-    <div class="section-head"><h2>Oběd</h2></div>
-    <p class="muted">Pruh „Oběd“ v rozvrhu. Stejný začátek i konec = oběd se v rozvrhu nezobrazí.</p>
-    <form class="lunch-form" onSubmit=${save}>
-      <${Field} label="Oběd od"><${TimeInput} value=${f.lunch_start} onChange=${(v) => v != null && setF({ ...f, lunch_start: v })} /><//>
-      <${Field} label="Oběd do"><${TimeInput} value=${f.lunch_end} onChange=${(v) => v != null && setF({ ...f, lunch_end: v })} /><//>
-      <button class="btn btn-primary">Uložit oběd</button>
-    </form>
-    <${ErrorLine} error=${err} />
-  </section>`;
+// ---------- Nastavení rozvrhu: the school day, lesson lengths, time blocks, days off, templates ----------
+const SCHEDULE_KEYS = ['day_start', 'day_end', 'circle_start', 'circle_end', 'lunch_start', 'lunch_end', 'trip_weekday', 'slot_step', 'lesson_lengths'];
+
+function blocksByDay(blocks) {
+  const by = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+  for (const b of blocks) for (const d of (b.days && b.days.length ? b.days : [1, 2, 3, 4, 5])) by[d].push({ name: b.name, start: b.start, end: b.end });
+  for (const d of [1, 2, 3, 4, 5]) by[d].sort((x, y) => x.start - y.start);
+  return by;
 }
 
-// ---------- time blocks: ready-made class times to pick from when planning ----------
-function BlocksTab() {
+function ScheduleSettings({ section }) {
   const app = useApp();
-  const { settings } = app;
-  // editor state: one list of blocks per weekday (1 = Monday … 5 = Friday)
-  const fromSettings = () => {
-    const by = { 1: [], 2: [], 3: [], 4: [], 5: [] };
-    for (const b of settings.blocks) for (const d of (b.days && b.days.length ? b.days : [1, 2, 3, 4, 5])) by[d].push({ name: b.name, start: b.start, end: b.end });
-    for (const d of [1, 2, 3, 4, 5]) by[d].sort((x, y) => x.start - y.start);
-    return by;
-  };
-  const [byDay, setByDay] = useState(fromSettings);
-  const [day, setDay] = useState(1);
-  const [hover, setHover] = useState(null);
-  const [copyTo, setCopyTo] = useState([]);
+  const { settings, me } = app;
+  const isAdmin = atLeast(me, 'admin');
+  const initial = () => ({ ...Object.fromEntries(SCHEDULE_KEYS.map((k) => [k, settings[k]])), lesson_lengths: [...settings.lesson_lengths], byDay: blocksByDay(settings.blocks) });
+  const [f, setF] = useState(initial);
   const [dirty, setDirty] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [newLen, setNewLen] = useState('');
+  const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setDirty(true); };
+  const go2 = (id) => { const el = document.getElementById('sekce-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  useEffect(() => { if (section) setTimeout(() => go2(section), 50); }, [section]);
+  useEffect(() => { // don't lose unsaved changes by closing the tab
+    if (!dirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    addEventListener('beforeunload', warn);
+    return () => removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  const addLen = () => {
+    const n = parseInt(newLen, 10);
+    if (n >= 5 && n <= 600 && !f.lesson_lengths.includes(n)) set('lesson_lengths', [...f.lesson_lengths, n].sort((a, b) => a - b));
+    setNewLen('');
+  };
+  const save = async () => {
+    setErr('');
+    if (f.day_end <= f.day_start) return setErr('Konec dne musí být po začátku výuky.');
+    if (f.circle_end < f.circle_start) return setErr('Konec ranních kruhů musí být po jejich začátku.');
+    if (f.lunch_end < f.lunch_start) return setErr('Konec oběda musí být po jeho začátku.');
+    if (!f.lesson_lengths.length) return setErr('Zadejte alespoň jednu povolenou délku hodiny.');
+    for (const d of [1, 2, 3, 4, 5]) for (const [i, r] of f.byDay[d].entries()) if (!(r.end > r.start)) return setErr(`${DAYS[d - 1]}, blok č. ${i + 1}: konec musí být po začátku.`);
+    const blocks = [];
+    for (const d of [1, 2, 3, 4, 5]) for (const r of f.byDay[d]) blocks.push({ name: r.name, start: Number(r.start), end: Number(r.end), days: [d] });
+    const body = { ...Object.fromEntries(SCHEDULE_KEYS.map((k) => [k, f[k]])), trip_weekday: Number(f.trip_weekday), slot_step: Number(f.slot_step), blocks };
+    setBusy(true);
+    try { await api('PUT', '/api/settings/schedule', body); app.toast('Nastavení rozvrhu uloženo.'); setDirty(false); app.reloadBoot(); } catch (x) { setErr(x.message); }
+    setBusy(false);
+  };
+  const discard = () => { setF(initial()); setDirty(false); setErr(''); };
+
+  const T = (k, adminOnly = true) => html`<${TimeInput} value=${f[k]} disabled=${adminOnly && !isAdmin} onChange=${(v) => v != null && set(k, v)} />`;
+  const nav = [['den', 'Školní den'], ['bloky', 'Bloky hodin'], ['volno', 'Volné dny'], ...(isAdmin ? [['sablony', 'Šablony']] : [])];
+  return html`<div class="sched-settings">
+    <nav class="subnav" aria-label="Části nastavení rozvrhu">${nav.map(([id, label]) => html`<button type="button" onClick=${() => go2(id)}>${label}</button>`)}</nav>
+
+    <section class="section" id="sekce-den">
+      <div class="section-head"><h2>Školní den</h2><div class="section-aside">${isAdmin ? 'Platí pro celý rozvrh. Časový přehled u bloků se mění hned, jak píšete.' : 'Časy dne, délky hodin a výjezdový den mění správce; oběd a bloky hodin můžete upravit vy.'}</div></div>
+      <div class="day-grid">
+        <fieldset class="day-group"><legend>Výuka</legend>
+          <${Field} label="Začátek výuky">${T('day_start')}<//>
+          <${Field} label="Konec dne">${T('day_end')}<//>
+        </fieldset>
+        <fieldset class="day-group"><legend>Ranní kruhy</legend>
+          <${Field} label="Od">${T('circle_start')}<//>
+          <${Field} label="Do">${T('circle_end')}<//>
+        </fieldset>
+        <fieldset class="day-group"><legend>Oběd</legend>
+          <${Field} label="Od">${T('lunch_start', false)}<//>
+          <${Field} label="Do" hint="stejný čas = bez oběda">${T('lunch_end', false)}<//>
+        </fieldset>
+        <fieldset class="day-group"><legend>Plánování</legend>
+          <${Field} label="Výjezdový den">
+            <select value=${f.trip_weekday} disabled=${!isAdmin} onChange=${(e) => set('trip_weekday', Number(e.target.value))}>
+              <option value="0">žádný</option>${DAYS.slice(0, 5).map((d, i) => html`<option value=${i + 1}>${d}</option>`)}
+            </select>
+          <//>
+          <${Field} label="Krok v rozvrhu" hint="zaokrouhlení času">
+            <select value=${f.slot_step} disabled=${!isAdmin} onChange=${(e) => set('slot_step', Number(e.target.value))}>${[5, 10, 15].map((v) => html`<option value=${v}>${v} min</option>`)}</select>
+          <//>
+        </fieldset>
+      </div>
+      <div class="field">
+        <span class="field-label">Povolené délky hodin <em>učitelé zakládají hodiny jen těchto délek (bloky platí vždy)</em></span>
+        <div class="len-chips">
+          ${f.lesson_lengths.map((l) => html`<span class="len-chip"><b>${l}</b> min${isAdmin && html` <button type="button" title="Odebrat" onClick=${() => set('lesson_lengths', f.lesson_lengths.filter((x) => x !== l))}>×</button>`}</span>`)}
+          ${isAdmin && html`<span class="len-add"><input type="number" min="5" max="600" placeholder="min" value=${newLen} onInput=${(e) => setNewLen(e.target.value)}
+            onKeyDown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); addLen(); } }} /><button type="button" class="btn" onClick=${addLen}>Přidat</button></span>`}
+        </div>
+      </div>
+    </section>
+
+    <section class="section blocks" id="sekce-bloky">
+      <div class="section-head"><h2>Bloky hodin</h2><div class="section-aside">pevné časy, ze kterých si vyučující při plánování jen vyberou</div></div>
+      <${BlockEditor} cfg=${f} byDay=${f.byDay} onChange=${(byDay) => set('byDay', byDay)} />
+    </section>
+
+    ${(dirty || err) && html`<div class="savebar" role="region" aria-label="Uložení nastavení rozvrhu">
+      <span>${err ? html`<span class="bad">${err}</span>` : 'Neuložené změny v nastavení rozvrhu'}</span>
+      <button type="button" class="btn" onClick=${discard} disabled=${busy}>Zahodit</button>
+      <button type="button" class="btn btn-primary" onClick=${save} disabled=${busy || !dirty}>${busy ? 'Ukládám…' : 'Uložit'}</button>
+    </div>`}
+
+    <div id="sekce-volno"><${HolidaysTab} readOnly=${!isAdmin} /></div>
+    ${isAdmin && html`<div id="sekce-sablony"><${TemplatesTab} /></div>`}
+  </div>`;
+}
+
+// Blocks per weekday: the week timeline, day tabs, the chosen day's rows, copy to other days.
+function BlockEditor({ cfg, byDay, onChange }) {
+  const app = useApp();
+  const [day, setDay] = useState(1);
+  const [hover, setHover] = useState(null);
+  const [copyTo, setCopyTo] = useState([]);
   const rows = byDay[day];
-  const change = (d, list) => { setByDay({ ...byDay, [d]: list }); setDirty(true); };
-  const set = (i, k, v) => change(day, rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const change = (d, list) => onChange({ ...byDay, [d]: list });
+  const setRow = (i, k, v) => change(day, rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const add = () => {
     const last = [...rows].sort((x, y) => x.end - y.end)[rows.length - 1];
-    const start = last ? last.end + 10 : settings.day_start;
+    const start = last ? last.end + 10 : cfg.day_start;
     change(day, [...rows, { name: '', start, end: Math.min(start + 45, 24 * 60 - 5) }]);
   };
   const copy = () => {
     if (!copyTo.length) return;
     const next = { ...byDay };
     for (const d of copyTo) next[d] = rows.map((r) => ({ ...r }));
-    setByDay(next); setDirty(true); setCopyTo([]);
-    app.toast(`Bloky z ${DAYS[day - 1]}ka zkopírovány na ${copyTo.map((d) => DAYS[d - 1]).join(', ')}. Nezapomeňte uložit.`);
+    onChange(next); setCopyTo([]);
+    app.toast(`Bloky zkopírovány na ${copyTo.map((d) => DAYS[d - 1]).join(', ')}.`);
   };
-  const save = async () => {
-    setErr('');
-    for (const d of [1, 2, 3, 4, 5]) for (const [i, r] of byDay[d].entries()) if (!(r.end > r.start)) { setDay(d); setErr(`${DAYS[d - 1]}, blok č. ${i + 1}: konec musí být po začátku.`); return; }
-    const body = [];
-    for (const d of [1, 2, 3, 4, 5]) for (const r of byDay[d]) body.push({ name: r.name, start: Number(r.start), end: Number(r.end), days: [d] });
-    setBusy(true);
-    try { await api('PUT', '/api/settings/blocks', body); app.toast('Bloky hodin uloženy.'); setDirty(false); app.reloadBoot(); } catch (x) { setErr(x.message); }
-    setBusy(false);
-  };
-  // overlapping blocks within a day are flagged (allowed, but usually a typo)
-  const overlaps = (list) => list.map((r, i) => list.some((o, j) => j !== i && o.start < r.end && o.end > r.start));
-  const ov = overlaps(rows);
-  return html`<${LunchForm} />
-  <section class="section blocks">
-    <div class="section-head"><h2>Bloky hodin</h2>
-      <div class="section-aside">${dirty && html`<span class="unsaved">neuložené změny</span>`}<button class="btn btn-primary" disabled=${busy || !dirty} onClick=${save}>Uložit bloky</button></div></div>
-    <p class="muted">Pevné časy hodin, ze kterých si vyučující při plánování jen vyberou. Každý den může mít jiný počet bloků i jiné časy. Blok platí i tehdy, když jeho délka není mezi povolenými délkami. Upravovat je může koordinátor a správce.</p>
-
-    <${BlockTimeline} byDay=${byDay} day=${day} hover=${hover} onDay=${setDay} />
-
+  const ov = rows.map((r, i) => rows.some((o, j) => j !== i && o.start < r.end && o.end > r.start));
+  return html`
+    <${BlockTimeline} cfg=${cfg} byDay=${byDay} day=${day} hover=${hover} onDay=${setDay} />
     <div class="seg block-days" role="tablist">
       ${[1, 2, 3, 4, 5].map((d) => html`<button type="button" role="tab" aria-selected=${d === day} class=${'seg-b' + (d === day ? ' on' : '')} onClick=${() => setDay(d)}>
         ${DAYS[d - 1]} <span class="bd-count">${byDay[d].length}</span></button>`)}
     </div>
-
     ${rows.length === 0 ? html`<${Empty}>${DAYS[day - 1][0].toUpperCase() + DAYS[day - 1].slice(1)} zatím nemá žádné bloky.<//>` : html`
     <div class="blocks-grid">
       <span class="field-label">Název <em>nepovinné</em></span><span class="field-label">Začátek</span><span class="field-label">Konec</span><span class="field-label">Délka</span><span></span>
       ${rows.map((r, i) => html`
-        <input value=${r.name} maxlength="40" placeholder=${(i + 1) + '. blok'} onInput=${(e) => set(i, 'name', e.target.value)} onFocus=${() => setHover(i)} onBlur=${() => setHover(null)} aria-label=${'Název bloku ' + (i + 1)} />
-        <span onMouseEnter=${() => setHover(i)} onMouseLeave=${() => setHover(null)}><${TimeInput} value=${r.start} onChange=${(v) => v != null && set(i, 'start', v)} /></span>
-        <span onMouseEnter=${() => setHover(i)} onMouseLeave=${() => setHover(null)}><${TimeInput} value=${r.end} onChange=${(v) => v != null && set(i, 'end', v)} /></span>
+        <input value=${r.name} maxlength="40" placeholder=${(i + 1) + '. blok'} onInput=${(e) => setRow(i, 'name', e.target.value)} onFocus=${() => setHover(i)} onBlur=${() => setHover(null)} aria-label=${'Název bloku ' + (i + 1)} />
+        <span onMouseEnter=${() => setHover(i)} onMouseLeave=${() => setHover(null)}><${TimeInput} value=${r.start} onChange=${(v) => v != null && setRow(i, 'start', v)} /></span>
+        <span onMouseEnter=${() => setHover(i)} onMouseLeave=${() => setHover(null)}><${TimeInput} value=${r.end} onChange=${(v) => v != null && setRow(i, 'end', v)} /></span>
         <span class=${'mono small' + (r.end > r.start && !ov[i] ? '' : ' bad')}>${r.end > r.start ? (r.end - r.start) + ' min' : '—'}${ov[i] ? ' · překryv' : ''}</span>
         <button type="button" class="btn btn-sq" title="Odebrat blok" onClick=${() => change(day, rows.filter((_, j) => j !== i))}>×</button>`)}
     </div>`}
-    <${ErrorLine} error=${err} />
     <div class="block-actions">
       <button type="button" class="btn" onClick=${add}>+ Přidat blok</button>
       ${rows.length > 0 && html`<div class="block-copy">
@@ -135,37 +190,98 @@ function BlocksTab() {
         ${[1, 2, 3, 4, 5].filter((d) => d !== day).map((d) => html`<label class="check"><input type="checkbox" checked=${copyTo.includes(d)} onChange=${(e) => setCopyTo(e.target.checked ? [...copyTo, d] : copyTo.filter((x) => x !== d))} /> ${DAYS[d - 1]}</label>`)}
         <button type="button" class="btn" disabled=${!copyTo.length} onClick=${copy}>Zkopírovat</button>
       </div>`}
-    </div>
-  </section>`;
+    </div>`;
 }
 
-// The week at a glance: every day's blocks on one time axis, with morning circles and lunch.
-function BlockTimeline({ byDay, day, hover, onDay }) {
-  const { settings } = useApp();
+// The week at a glance, from the values being edited: teaching hours, morning circles,
+// lunch and every day's blocks on one time axis.
+function BlockTimeline({ cfg, byDay, day, hover, onDay }) {
   const all = [1, 2, 3, 4, 5].flatMap((d) => byDay[d]);
-  const lo = Math.floor(Math.min(settings.circle_start || settings.day_start, settings.day_start, ...all.map((r) => r.start)) / 60) * 60;
-  const hi = Math.ceil(Math.max(settings.day_end, settings.lunch_end || 0, ...all.map((r) => r.end)) / 60) * 60;
-  const pct = (m) => ((Math.min(Math.max(m, lo), hi) - lo) / (hi - lo)) * 100;
+  const lo = Math.floor(Math.min(cfg.circle_start || cfg.day_start, cfg.day_start, ...all.map((r) => r.start)) / 60) * 60;
+  const hi = Math.ceil(Math.max(cfg.day_end, cfg.lunch_end || 0, ...all.map((r) => r.end)) / 60) * 60;
+  const pct = (m) => ((Math.min(Math.max(m, lo), hi) - lo) / ((hi - lo) || 60)) * 100;
   const hours = [];
   for (let m = lo; m <= hi; m += 60) hours.push(m);
   const band = (from, to, cls, label) => to > from && html`<div class=${'bt-band ' + cls} style=${`left:${pct(from)}%;width:${pct(to) - pct(from)}%`}><span>${label}</span></div>`;
-  return html`<div class="bt" aria-label="Bloky v týdnu">
+  return html`<div class="bt" aria-label="Školní den a bloky v týdnu">
     <div class="bt-axis"><span></span><div class="bt-ticks">${hours.map((m) => html`<span style=${`left:${pct(m)}%`}>${hm(m)}</span>`)}</div></div>
     ${[1, 2, 3, 4, 5].map((d) => {
       const list = byDay[d];
       const ov = list.map((r, i) => list.some((o, j) => j !== i && o.start < r.end && o.end > r.start));
-      return html`<div class=${'bt-row' + (d === day ? ' on' : '')} onClick=${() => onDay(d)} title=${'Upravit ' + DAYS[d - 1]}>
-        <span class="bt-day">${DAYS[d - 1]}</span>
+      return html`<div class=${'bt-row' + (d === day ? ' on' : '') + (Number(cfg.trip_weekday) === d ? ' is-trip' : '')} onClick=${() => onDay(d)} title=${'Upravit bloky: ' + DAYS[d - 1]}>
+        <span class="bt-day">${DAYS[d - 1]}${Number(cfg.trip_weekday) === d ? html`<small>výjezdy</small>` : ''}</span>
         <div class="bt-track">
           ${hours.map((m) => html`<i class="bt-line" style=${`left:${pct(m)}%`}></i>`)}
-          ${band(settings.circle_start, settings.circle_end, 'bt-circle', 'kruhy')}
-          ${band(settings.lunch_start, settings.lunch_end, 'bt-lunch', 'oběd')}
+          <div class="bt-off" style=${`left:0;width:${pct(cfg.day_start)}%`}></div>
+          <div class="bt-off" style=${`left:${pct(cfg.day_end)}%;right:0`}></div>
+          ${band(cfg.circle_start, cfg.circle_end, 'bt-circle', 'kruhy')}
+          ${band(cfg.lunch_start, cfg.lunch_end, 'bt-lunch', 'oběd')}
           ${list.map((r, i) => html`<div class=${'bt-block' + (ov[i] ? ' is-over' : '') + (d === day && hover === i ? ' is-hover' : '')} style=${`left:${pct(r.start)}%;width:${Math.max(pct(r.end) - pct(r.start), 0.6)}%`}>
             <b>${r.name || (i + 1) + '.'}</b><span>${hm(r.start)}–${hm(r.end)}</span>
           </div>`)}
         </div>
       </div>`;
     })}
+    <div class="bt-key"><span><i class="k-teach"></i>výuka ${hm(cfg.day_start)}–${hm(cfg.day_end)}</span><span><i class="k-circle"></i>ranní kruhy</span><span><i class="k-lunch"></i>oběd</span><span><i class="k-block"></i>blok</span></div>
+  </div>`;
+}
+
+function AIForm({ f, set }) {
+  const app = useApp();
+  const [st, setSt] = useState(null);
+  const [key, setKey] = useState('');
+  const [instr, setInstr] = useState(null);
+  useEffect(() => { api('GET', '/api/settings/ai').then((s) => { setSt(s); setInstr(s.instructions); }).catch(() => {}); }, []);
+  const save = async (body, msg) => {
+    try { const s = await api('PUT', '/api/settings/ai', body); setSt(s); setInstr(s.instructions); setKey(''); app.toast(msg); } catch (x) { app.toast(x.message, 'err'); }
+  };
+  return html`<section class="section">
+    <div class="section-head"><h2>Osobní asistent</h2><div class="section-aside">Žáci: Claude Haiku 5.5 · učitelé: Claude Sonnet 5.5 (střední úsilí)</div></div>
+    ${st && html`<p class="ai-status">${st.configured
+      ? (st.readable ? html`API klíč: <b>nastaven</b> <span class="mono">(…${st.hint})</span>` : html`<span class="bad">API klíč nelze načíst – vložte ho prosím znovu.</span>`)
+      : html`<span class="muted">API klíč zatím není nastaven – asistent je vypnutý.</span>`}
+      ${st.usage_30d && st.usage_30d.answers > 0 && html` · za 30 dní ${st.usage_30d.answers} odpovědí`}</p>`}
+    <div class="gate-form">
+      <span class="field-label">API klíč Anthropic</span>
+      <div class="inline-add">
+        <input type="password" autocomplete="off" placeholder="sk-ant-…" value=${key} onInput=${(e) => setKey(e.target.value)} />
+        <button type="button" class="btn" disabled=${key.trim().length < 20} onClick=${() => save({ api_key: key }, 'API klíč uložen.')}>Uložit klíč</button>
+        ${st && st.configured && html`<button type="button" class="btn btn-ghost" onClick=${() => save({ api_key: '' }, 'API klíč odebrán.')}>Odebrat</button>`}
+      </div>
+      <span class="field-hint">Klíč se uloží zašifrovaně (AES-256) a už nikdy se nezobrazí. Zašifrovat, ne zahashovat: Raven ho musí posílat službě Claude.</span>
+    </div>
+    <div class="form-grid" style="margin-top:14px">
+      <label class="check"><input type="checkbox" checked=${f.ai_students} onChange=${(e) => set('ai_students', e.target.checked)} /> Zapnuto pro žáky</label>
+      <label class="check"><input type="checkbox" checked=${f.ai_teachers} onChange=${(e) => set('ai_teachers', e.target.checked)} /> Zapnuto pro učitele</label>
+    </div>
+    <p class="field-hint">Zapnutí pro žáky a učitele se uloží tlačítkem „Uložit nastavení školy“ dole.</p>
+    ${instr !== null && html`<div class="field" style="margin-top:12px">
+      <span class="field-label">Doplňující pokyny pro asistenta <em>nepovinné, vidí je jen správce</em></span>
+      <textarea rows="3" maxlength="3000" value=${instr} onInput=${(e) => setInstr(e.target.value)} placeholder="např. Při otázkách na obědy odkaž na jídelnu. Žákům tykej."></textarea>
+      <span class="field-hint">Mohou upravit tón nebo zdůraznit témata. Základní pravidla (jen otázky k Ravenu, ochrana před „ignoruj pokyny“, přístup jen k povoleným údajům) jsou pevně v serveru a pokyny je nepřepíšou.</span>
+      <div><button type="button" class="btn" onClick=${() => save({ instructions: instr }, 'Pokyny uloženy.')}>Uložit pokyny</button></div>
+    </div>`}
+  </section>`;
+}
+
+function GateForm() {
+  const app = useApp();
+  const [pw, setPw] = useState('');
+  const save = async (value) => {
+    try {
+      const r = await api('PUT', '/api/settings/gate', { password: value });
+      setPw('');
+      app.toast(r.enabled ? 'Doplňkové heslo uloženo.' : 'Přihlášení mimo školní domény je vypnuté.');
+    } catch (x) { app.toast(x.message, 'err'); }
+  };
+  return html`<div class="gate-form">
+    <span class="field-label">Doplňkové heslo pro adresy mimo školu</span>
+    <div class="inline-add">
+      <input type="text" autocomplete="off" placeholder="nové heslo (min. 8 znaků)" value=${pw} onInput=${(e) => setPw(e.target.value)} />
+      <button type="button" class="btn" disabled=${pw.length < 8} onClick=${() => save(pw)}>Nastavit</button>
+      <button type="button" class="btn btn-ghost" onClick=${() => save('')}>Vypnout</button>
+    </div>
+    <span class="field-hint">Uloží se jen zašifrovaně (hash), současné heslo proto nelze zobrazit.</span>
   </div>`;
 }
 
@@ -231,85 +347,20 @@ function UserDialog({ u, onClose, onSaved }) {
   <//>`;
 }
 
-// ---------- settings ----------
-function AIForm({ f, set }) {
-  const app = useApp();
-  const [st, setSt] = useState(null);
-  const [key, setKey] = useState('');
-  const [instr, setInstr] = useState(null);
-  useEffect(() => { api('GET', '/api/settings/ai').then((s) => { setSt(s); setInstr(s.instructions); }).catch(() => {}); }, []);
-  const save = async (body, msg) => {
-    try { const s = await api('PUT', '/api/settings/ai', body); setSt(s); setInstr(s.instructions); setKey(''); app.toast(msg); } catch (x) { app.toast(x.message, 'err'); }
-  };
-  return html`<section class="section">
-    <div class="section-head"><h2>Osobní asistent</h2><div class="section-aside">Žáci: Claude Haiku 5.5 · učitelé: Claude Sonnet 5.5 (střední úsilí)</div></div>
-    ${st && html`<p class="ai-status">${st.configured
-      ? (st.readable ? html`API klíč: <b>nastaven</b> <span class="mono">(…${st.hint})</span>` : html`<span class="bad">API klíč nelze načíst – vložte ho prosím znovu.</span>`)
-      : html`<span class="muted">API klíč zatím není nastaven – asistent je vypnutý.</span>`}
-      ${st.usage_30d && st.usage_30d.answers > 0 && html` · za 30 dní ${st.usage_30d.answers} odpovědí`}</p>`}
-    <div class="gate-form">
-      <span class="field-label">API klíč Anthropic</span>
-      <div class="inline-add">
-        <input type="password" autocomplete="off" placeholder="sk-ant-…" value=${key} onInput=${(e) => setKey(e.target.value)} />
-        <button type="button" class="btn" disabled=${key.trim().length < 20} onClick=${() => save({ api_key: key }, 'API klíč uložen.')}>Uložit klíč</button>
-        ${st && st.configured && html`<button type="button" class="btn btn-ghost" onClick=${() => save({ api_key: '' }, 'API klíč odebrán.')}>Odebrat</button>`}
-      </div>
-      <span class="field-hint">Klíč se uloží zašifrovaně (AES-256) a už nikdy se nezobrazí. Zašifrovat, ne zahashovat: Raven ho musí posílat službě Claude.</span>
-    </div>
-    <div class="form-grid" style="margin-top:14px">
-      <label class="check"><input type="checkbox" checked=${f.ai_students} onChange=${(e) => set('ai_students', e.target.checked)} /> Zapnuto pro žáky</label>
-      <label class="check"><input type="checkbox" checked=${f.ai_teachers} onChange=${(e) => set('ai_teachers', e.target.checked)} /> Zapnuto pro učitele</label>
-    </div>
-    <p class="field-hint">Zapnutí pro žáky a učitele se uloží tlačítkem „Uložit nastavení“ dole.</p>
-    ${instr !== null && html`<div class="field" style="margin-top:12px">
-      <span class="field-label">Doplňující pokyny pro asistenta <em>nepovinné, vidí je jen správce</em></span>
-      <textarea rows="3" maxlength="3000" value=${instr} onInput=${(e) => setInstr(e.target.value)} placeholder="např. Při otázkách na obědy odkaž na jídelnu. Žákům tykej."></textarea>
-      <span class="field-hint">Mohou upravit tón nebo zdůraznit témata. Základní pravidla (jen otázky k Ravenu, ochrana před „ignoruj pokyny“, přístup jen k povoleným údajům) jsou pevně v serveru a pokyny je nepřepíšou.</span>
-      <div><button type="button" class="btn" onClick=${() => save({ instructions: instr }, 'Pokyny uloženy.')}>Uložit pokyny</button></div>
-    </div>`}
-  </section>`;
-}
-
-function GateForm() {
-  const app = useApp();
-  const [pw, setPw] = useState('');
-  const save = async (value) => {
-    try {
-      const r = await api('PUT', '/api/settings/gate', { password: value });
-      setPw('');
-      app.toast(r.enabled ? 'Doplňkové heslo uloženo.' : 'Přihlášení mimo školní domény je vypnuté.');
-    } catch (x) { app.toast(x.message, 'err'); }
-  };
-  return html`<div class="gate-form">
-    <span class="field-label">Doplňkové heslo pro adresy mimo školu</span>
-    <div class="inline-add">
-      <input type="text" autocomplete="off" placeholder="nové heslo (min. 8 znaků)" value=${pw} onInput=${(e) => setPw(e.target.value)} />
-      <button type="button" class="btn" disabled=${pw.length < 8} onClick=${() => save(pw)}>Nastavit</button>
-      <button type="button" class="btn btn-ghost" onClick=${() => save('')}>Vypnout</button>
-    </div>
-    <span class="field-hint">Uloží se jen zašifrovaně (hash), současné heslo proto nelze zobrazit.</span>
-  </div>`;
-}
+// ---------- Nastavení školy: name, grades, sign-in, assistant ----------
 function SettingsTab() {
   const app = useApp();
   const [f, setF] = useState(() => ({ ...app.settings, grades_text: app.settings.grades.join(', ') }));
-  const [newLen, setNewLen] = useState('');
   const [err, setErr] = useState('');
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const addLen = () => {
-    const n = parseInt(newLen, 10);
-    if (n >= 5 && n <= 600 && !f.lesson_lengths.includes(n)) set('lesson_lengths', [...f.lesson_lengths, n].sort((a, b) => a - b));
-    setNewLen('');
-  };
   const save = async (e) => {
     e.preventDefault();
     setErr('');
     const grades = f.grades_text.split(/[,;\s]+/).map((x) => parseInt(x, 10)).filter((x) => x > 0 && x < 14);
-    const body = { ...f, grades, trip_weekday: Number(f.trip_weekday) };
-    delete body.grades_text;
-    try { await api('PUT', '/api/settings', body); app.toast('Nastavení uloženo.'); app.reloadBoot(); } catch (x) { setErr(x.message); }
+    const body = { school_name: f.school_name, grades, google_client_id: f.google_client_id, teacher_domains: f.teacher_domains,
+      student_domains: f.student_domains, names_from_email: f.names_from_email, ai_students: f.ai_students, ai_teachers: f.ai_teachers };
+    try { await api('PUT', '/api/settings', body); app.toast('Nastavení školy uloženo.'); app.reloadBoot(); } catch (x) { setErr(x.message); }
   };
-  const T = (k) => html`<${TimeInput} value=${f[k]} onChange=${(v) => v != null && set(k, v)} />`;
   return html`<form class="settings" onSubmit=${save}>
     <section class="section">
       <div class="section-head"><h2>Škola</h2></div>
@@ -332,35 +383,9 @@ function SettingsTab() {
       <${GateForm} />
     </section>
     <${AIForm} f=${f} set=${set} />
-    <section class="section">
-      <div class="section-head"><h2>Délky hodin</h2><div class="section-aside">Učitelé a koordinátoři mohou zakládat jen hodiny těchto délek.</div></div>
-      <div class="len-chips">
-        ${f.lesson_lengths.map((l) => html`<span class="len-chip"><b>${l}</b> min <button type="button" title="Odebrat" onClick=${() => set('lesson_lengths', f.lesson_lengths.filter((x) => x !== l))}>×</button></span>`)}
-        <span class="len-add"><input type="number" min="5" max="600" placeholder="min" value=${newLen} onInput=${(e) => setNewLen(e.target.value)}
-          onKeyDown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); addLen(); } }} /><button type="button" class="btn" onClick=${addLen}>Přidat</button></span>
-      </div>
-    </section>
-    <section class="section">
-      <div class="section-head"><h2>Školní den</h2></div>
-      <div class="form-grid form-grid-4">
-        <${Field} label="Ranní kruhy od">${T('circle_start')}<//>
-        <${Field} label="Ranní kruhy do">${T('circle_end')}<//>
-        <${Field} label="Začátek výuky">${T('day_start')}<//>
-        <${Field} label="Konec dne">${T('day_end')}<//>
-        <${Field} label="Oběd od">${T('lunch_start')}<//>
-        <${Field} label="Oběd do">${T('lunch_end')}<//>
-        <${Field} label="Krok v rozvrhu" hint="zaokrouhlení času">
-          <select value=${f.slot_step} onChange=${(e) => set('slot_step', Number(e.target.value))}>${[5, 10, 15].map((s) => html`<option value=${s}>${s} min</option>`)}</select>
-        <//>
-        <${Field} label="Výjezdový den">
-          <select value=${f.trip_weekday} onChange=${(e) => set('trip_weekday', e.target.value)}>
-            <option value="0">žádný</option>${DAYS.slice(0, 5).map((d, i) => html`<option value=${i + 1}>${d}</option>`)}
-          </select>
-        <//>
-      </div>
-    </section>
+    <p class="muted">Časy školního dne, délky hodin, bloky, volné dny a šablony najdete v záložce <a href="#/sprava?tab=rozvrh">Nastavení rozvrhu</a>.</p>
     <${ErrorLine} error=${err} />
-    <div class="form-actions"><button class="btn btn-primary">Uložit nastavení</button></div>
+    <div class="form-actions"><button class="btn btn-primary">Uložit nastavení školy</button></div>
   </form>`;
 }
 
@@ -387,7 +412,7 @@ function stateHolidays(startYear) {
   ];
 }
 
-function HolidaysTab() {
+function HolidaysTab({ readOnly }) {
   const app = useApp();
   const { boot } = app;
   const [f, setF] = useState({ name: '', date_from: today(), date_to: today() });
@@ -421,26 +446,24 @@ function HolidaysTab() {
     <td><b>${h.name}</b></td>
     <td class="mono nowrap">${fmtDate(h.date_from)}${h.date_to !== h.date_from ? ' – ' + fmtDate(h.date_to) : ''}</td>
     <td class="mono">${daysBetween(h.date_from, h.date_to) + 1}</td>
-    <td class="right nowrap"><button class="btn btn-ghost btn-s" onClick=${() => setEdit(h)}>Upravit</button><button class="btn btn-ghost btn-s" onClick=${() => del(h)}>Smazat</button></td>
+    <td class="right nowrap">${!readOnly && html`<button class="btn btn-ghost btn-s" onClick=${() => setEdit(h)}>Upravit</button><button class="btn btn-ghost btn-s" onClick=${() => del(h)}>Smazat</button>`}</td>
   </tr>`;
   return html`<div>
     <section class="section">
-      <div class="section-head"><h2>Přidat volno</h2><div class="section-aside">prázdniny, svátky, ředitelské volno – v tyto dny nelze plánovat</div></div>
-      <form class="form-grid form-grid-4" onSubmit=${add}>
-        <${Field} label="Název"><input required value=${f.name} onInput=${(e) => setF({ ...f, name: e.target.value })} placeholder="např. Jarní prázdniny" /><//>
-        <${Field} label="Od"><input type="date" required value=${f.date_from} onChange=${(e) => setF({ ...f, date_from: e.target.value, date_to: f.date_to < e.target.value ? e.target.value : f.date_to })} /><//>
-        <${Field} label="Do"><input type="date" required value=${f.date_to} min=${f.date_from} onChange=${(e) => setF({ ...f, date_to: e.target.value })} /><//>
-        <div class="field field-end"><button class="btn btn-primary">Přidat</button></div>
-      </form>
-      <${ErrorLine} error=${err} />
-      <p><button class="btn" onClick=${addState}>Doplnit státní svátky pro školní rok ${sy}/${String((sy + 1) % 100).padStart(2, '0')}</button></p>
+      <div class="section-head"><h2>Volné dny <span class="count">${upcoming.length}</span></h2><div class="section-aside">prázdniny, svátky, ředitelské volno – v tyto dny se neplánuje a šablony je vynechají</div></div>
+      ${readOnly ? html`<p class="muted">Volné dny nastavuje správce.</p>` : html`
+        <form class="form-grid form-grid-4" onSubmit=${add}>
+          <${Field} label="Název"><input required value=${f.name} onInput=${(e) => setF({ ...f, name: e.target.value })} placeholder="např. Jarní prázdniny" /><//>
+          <${Field} label="Od"><input type="date" required value=${f.date_from} onChange=${(e) => setF({ ...f, date_from: e.target.value, date_to: f.date_to < e.target.value ? e.target.value : f.date_to })} /><//>
+          <${Field} label="Do"><input type="date" required value=${f.date_to} min=${f.date_from} onChange=${(e) => setF({ ...f, date_to: e.target.value })} /><//>
+          <div class="field field-end"><button class="btn btn-primary">Přidat volno</button></div>
+        </form>
+        <${ErrorLine} error=${err} />
+        <p><button class="btn" onClick=${addState}>Doplnit státní svátky pro školní rok ${sy}/${String((sy + 1) % 100).padStart(2, '0')}</button></p>`}
+      ${upcoming.length ? html`<div class="table-wrap"><table class="ledger"><thead><tr><th>Nadcházející</th><th>Termín</th><th>Dní</th><th></th></tr></thead><tbody>${upcoming.map(row)}</tbody></table></div>` : html`<${Empty}>Žádné volno v plánu.<//>`}
+      ${past.length > 0 && html`<details class="past-hol"><summary>Proběhlé (${past.length})</summary>
+        <div class="table-wrap"><table class="ledger muted-table"><tbody>${past.slice().reverse().map(row)}</tbody></table></div></details>`}
     </section>
-    <section class="section">
-      <div class="section-head"><h2>Nadcházející <span class="count">${upcoming.length}</span></h2></div>
-      ${upcoming.length ? html`<div class="table-wrap"><table class="ledger"><thead><tr><th>Název</th><th>Termín</th><th>Dní</th><th></th></tr></thead><tbody>${upcoming.map(row)}</tbody></table></div>` : html`<${Empty}>Žádné volno v plánu.<//>`}
-    </section>
-    ${past.length > 0 && html`<section class="section"><div class="section-head"><h2>Proběhlé</h2></div>
-      <div class="table-wrap"><table class="ledger muted-table"><tbody>${past.slice().reverse().map(row)}</tbody></table></div></section>`}
     ${edit && html`<${HolidayDialog} h=${edit} onClose=${() => setEdit(null)} onSaved=${() => { setEdit(null); app.reloadBoot(); }} />`}
   </div>`;
 }
