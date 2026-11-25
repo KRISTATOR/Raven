@@ -583,6 +583,7 @@ func (a *App) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		SlotStep      int         `json:"slot_step"`
 		LessonLengths []int       `json:"lesson_lengths"`
 		Blocks        []TimeBlock `json:"blocks"`
+		BlocksOnly    *bool       `json:"blocks_only"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -626,6 +627,9 @@ func (a *App) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		s.DayStart, s.DayEnd = in.DayStart, in.DayEnd
 		s.CircleStart, s.CircleEnd = in.CircleStart, in.CircleEnd
 		s.TripWeekday, s.SlotStep = in.TripWeekday, in.SlotStep
+		if in.BlocksOnly != nil {
+			s.BlocksOnly = *in.BlocksOnly
+		}
 	}
 	blocks, msg := normalizeBlocks(in.Blocks)
 	if msg != "" {
@@ -638,7 +642,7 @@ func (a *App) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	var parts []string
 	if s.DayStart != old.DayStart || s.DayEnd != old.DayEnd || s.CircleStart != old.CircleStart || s.CircleEnd != old.CircleEnd ||
-		s.TripWeekday != old.TripWeekday || s.SlotStep != old.SlotStep || fmt.Sprint(s.LessonLengths) != fmt.Sprint(old.LessonLengths) {
+		s.TripWeekday != old.TripWeekday || s.SlotStep != old.SlotStep || fmt.Sprint(s.LessonLengths) != fmt.Sprint(old.LessonLengths) || s.BlocksOnly != old.BlocksOnly {
 		parts = append(parts, "školní den")
 	}
 	if s.LunchStart != old.LunchStart || s.LunchEnd != old.LunchEnd {

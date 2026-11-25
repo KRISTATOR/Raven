@@ -42,6 +42,20 @@ export function eventColor(ev, maps) {
 }
 const teachersOf = (ev) => [ev.owner_id, ...(ev.teacher_ids || [])];
 
+// The blocks of the date's weekday, and the block a minute falls into (or the nearest one).
+export function dayBlocks(settings, date) {
+  return (settings.blocks || []).filter((b) => !b.days || !b.days.length || b.days.includes(weekdayOf(date)));
+}
+export function blockAt(settings, date, m) {
+  const list = dayBlocks(settings, date);
+  if (!list.length) return null;
+  const inside = list.find((b) => m >= b.start && m < b.end);
+  if (inside) return inside;
+  let best = null;
+  for (const b of list) { const d = m < b.start ? b.start - m : m - b.end; if (!best || d < best.d) best = { b, d }; }
+  return best.b;
+}
+
 export function weekTitle(mon) {
   const fri = addDays(mon, 4);
   const a = parseISO(mon), b = parseISO(fri);
@@ -122,11 +136,18 @@ export function SchedulePage({ params }) {
     const hol = holidayOn(boot.holidays, date);
     if (hol && !atLeast(me, 'admin')) { app.toast(`${hol.name} – na volné dny nelze plánovat.`, 'err'); return; }
     const rect = e.currentTarget.getBoundingClientRect();
-    let m = gridStart + ((e.clientX - rect.left) / rect.width) * span;
-    m = Math.round(m / step) * step;
+    const raw = gridStart + ((e.clientX - rect.left) / rect.width) * span;
+    let m = Math.round(raw / step) * step;
     m = Math.max(gridStart, Math.min(m, gridEnd - 30));
     const isTripDay = weekdayOf(date) === settings.trip_weekday;
-    setDialog({ preset: { date, start: m, kind: isTripDay && m < settings.lunch_start ? 'trip' : 'lesson' } });
+    const kind = isTripDay && m < settings.lunch_start ? 'trip' : 'lesson';
+    // lessons go into the day's blocks: a click anywhere inside 8:35–9:20 starts at 8:35
+    const b = kind === 'lesson' && blockAt(settings, date, raw);
+    setDialog({ preset: b ? { date, start: b.start, end: b.end, len: b.end - b.start, kind } : { date, start: m, kind } });
+  };
+  const addPreset = () => {
+    const b = dayBlocks(settings, days[0])[0];
+    return b ? { date: days[0], start: b.start, end: b.end, len: b.end - b.start, kind: 'lesson' } : { date: days[0], start: settings.day_start, kind: 'lesson' };
   };
 
   const tripDayName = settings.trip_weekday ? DAYS[settings.trip_weekday - 1] : '';
@@ -172,7 +193,7 @@ export function SchedulePage({ params }) {
       <button class="btn" onClick=${() => window.print()}>Tisk</button>
       ${atLeast(me, 'admin') && html`<button class="btn" onClick=${() => setTplOpen(true)}>Šablony…</button>`}
       ${!readOnly && html`<button class="btn" onClick=${() => setCopyOpen(true)}>Kopírovat týden…</button>
-      <button class="btn btn-primary" onClick=${() => setDialog({ preset: { date: days[0], start: settings.day_start, kind: 'lesson' } })}>+ Přidat do rozvrhu</button>`}
+      <button class="btn btn-primary" onClick=${() => setDialog({ preset: addPreset() })}>+ Přidat do rozvrhu</button>`}
     </div>
 
     <div class=${'tt-scroll' + (loading ? ' is-loading' : '') + (readOnly ? ' is-readonly' : '')}>
@@ -392,8 +413,8 @@ function EventForm({ ev, preset, onClose, onSaved }) {
     teacher_ids: ev.teacher_ids || [], group_ids: ev.group_ids || [], capacity: ev.capacity || '', note: ev.note,
     repeat: false, repeat_until: '',
   } : {
-    kind: preset.kind || 'lesson', date: preset.date, start: preset.start, len: initLen,
-    end: Math.min(preset.start + 120, settings.day_end), subject_id: '', title: '', room_id: '', owner_id: me.id,
+    kind: preset.kind || 'lesson', date: preset.date, start: preset.start, len: preset.len || initLen,
+    end: preset.end || Math.min(preset.start + 120, settings.day_end), subject_id: '', title: '', room_id: '', owner_id: me.id,
     teacher_ids: [], group_ids: [], capacity: '', note: '', repeat: false, repeat_until: addDays(preset.date, 28),
   });
   const [customLen, setCustomLen] = useState(() => ev && ev.kind === 'lesson' && !lengths.includes(ev.end - ev.start));
@@ -406,7 +427,36 @@ function EventForm({ ev, preset, onClose, onSaved }) {
   const end = isLesson ? f.start + Number(f.len) : f.end;
   const hol = holidayOn(boot.holidays, f.date);
   const allBlocks = settings.blocks || [];
-  const blocks = allBlocks.filter((b) => !b.days || !b.days.length || b.days.includes(weekdayOf(f.date))); // the chosen day's blocks
+  const blocks = dayBlocks(settings, f.date); // the chosen day's blocks
+  const matched = blocks.find((b) => Number(f.start) === b.start && end === b.end);
+  // on days with blocks, teachers put lessons only into them (setting; coordinators may differ)
+  const blocksOnly = settings.blocks_only && !isCoord && isLesson && blocks.length > 0;
+  const firstDate = useRef(f.date);
+  useEffect(() => { // moved to another weekday: take that day's nearest block
+    if (f.date === firstDate.current) return;
+    firstDate.current = f.date;
+    if (!isLesson || matched || !blocks.length) return;
+    const b = blockAt(settings, f.date, Number(f.start));
+    if (b) setF((x) => ({ ...x, start: b.start, len: b.end - b.start, end: b.end }));
+  }, [f.date]);
+
+  // who already has something at that time (greyed out, still selectable)
+  const [dayEvents, setDayEvents] = useState([]);
+  useEffect(() => {
+    let live = true;
+    api('GET', `/api/events?from=${f.date}&to=${f.date}`, undefined, { quiet: true }).then((d) => live && setDayEvents(d.events)).catch(() => live && setDayEvents([]));
+    return () => { live = false; };
+  }, [f.date]);
+  const taken = useMemo(() => {
+    const m = {};
+    for (const e of dayEvents) {
+      if (ev && e.id === ev.id) continue;
+      if (!(e.start < end && e.end > Number(f.start))) continue;
+      for (const id of new Set([e.owner_id, ...(e.teacher_ids || [])])) (m[id] = m[id] || []).push(e);
+    }
+    return m;
+  }, [dayEvents, f.start, end, ev && ev.id]);
+  const busyText = (id) => (taken[id] ? 'V tu dobu má: ' + taken[id].map((e) => `${eventTitle(e, maps)} ${hm(e.start)}–${hm(e.end)}`).join(', ') : '');
   const lenOptions = [...new Set([...lengths, ...allBlocks.map((b) => b.end - b.start), ...(ev && isLesson ? [ev.end - ev.start] : [])])].sort((a, b) => a - b);
   const pickBlock = (b) => {
     setCustomLen(false);
@@ -423,6 +473,7 @@ function EventForm({ ev, preset, onClose, onSaved }) {
   });
 
   const save = async (force = false) => {
+    if (blocksOnly && !matched) { setErr('Vyberte blok – hodiny se plánují do bloků.'); return; }
     setErr(''); setBusy(true);
     try {
       let r;
@@ -478,7 +529,7 @@ function EventForm({ ev, preset, onClose, onSaved }) {
       <//>`}
 
       ${blocks.length > 0 && html`<div class="field field-wide">
-        <span class="field-label">Blok <em>vyplní začátek i konec</em></span>
+        <span class="field-label">Blok <em>${blocksOnly ? 'hodiny se plánují do bloků' : 'vyplní začátek i konec'}</em></span>
         <div class="block-picks">${blocks.map((b, i) => {
           const on = Number(f.start) === b.start && end === b.end;
           return html`<button type="button" class=${'block-pick' + (on ? ' on' : '')} aria-pressed=${on} onClick=${() => pickBlock(b)}>
@@ -486,14 +537,17 @@ function EventForm({ ev, preset, onClose, onSaved }) {
         })}</div>
       </div>`}
       <${Field} label="Datum" half><input type="date" required value=${f.date} onChange=${(e) => e.target.value && set('date', e.target.value)} /><//>
-      <${Field} label=${f.kind === 'trip' ? 'Odjezd' : 'Začátek'} half><${TimeInput} required value=${f.start} onChange=${(v) => v != null && set('start', v)} /><//>
-      ${isLesson && !customLen && html`<${Field} label="Délka" hint=${'konec v ' + hm(end)} half>
+      ${blocksOnly && html`<${Field} label="Čas" half>
+        <div class=${'block-time' + (matched ? '' : ' bad')}>${matched ? `${hm(matched.start)}–${hm(matched.end)} · ${matched.end - matched.start} min` : 'vyberte blok výše'}</div>
+      <//>`}
+      ${!blocksOnly && html`<${Field} label=${f.kind === 'trip' ? 'Odjezd' : 'Začátek'} half><${TimeInput} required value=${f.start} onChange=${(v) => v != null && set('start', v)} /><//>`}
+      ${isLesson && !blocksOnly && !customLen && html`<${Field} label="Délka" hint=${'konec v ' + hm(end)} half>
         <select value=${f.len} onChange=${(e) => { if (e.target.value === 'custom') setCustomLen(true); else set('len', Number(e.target.value)); }}>
           ${lenOptions.map((l) => html`<option value=${l}>${l} min${l >= 90 ? ` (${Math.floor(l / 60)} h ${l % 60 ? (l % 60) + ' min' : ''})` : ''}</option>`)}
           ${isAdmin && html`<option value="custom">Vlastní konec…</option>`}
         </select>
       <//>`}
-      ${isLesson && customLen && html`<${Field} label="Konec" hint=${(end - f.start) + ' min (mimo povolené délky)'} half>
+      ${isLesson && !blocksOnly && customLen && html`<${Field} label="Konec" hint=${(end - f.start) + ' min (mimo povolené délky)'} half>
         <${TimeInput} value=${end} onChange=${(v) => v != null && set('len', v - f.start)} />
       <//>`}
       ${!isLesson && html`<${Field} label=${f.kind === 'trip' ? 'Návrat' : 'Konec'} half>
@@ -506,8 +560,9 @@ function EventForm({ ev, preset, onClose, onSaved }) {
 
       <${Field} label=${f.kind === 'trip' ? 'Vede' : 'Vyučující'} half>
         ${isCoord
-          ? html`<select value=${f.owner_id} onChange=${(e) => set('owner_id', Number(e.target.value))}>${app.activeUsers.map((u) => html`<option value=${u.id}>${u.name}</option>`)}</select>`
+          ? html`<select class=${taken[f.owner_id] ? 'is-busy' : ''} value=${f.owner_id} onChange=${(e) => set('owner_id', Number(e.target.value))}>${app.activeUsers.map((u) => html`<option value=${u.id} class=${taken[u.id] ? 'opt-busy' : ''}>${u.name}${taken[u.id] ? ' · má v tu dobu hodinu' : ''}</option>`)}</select>`
           : html`<input value=${maps.users[f.owner_id]?.name || me.name} disabled />`}
+        ${taken[f.owner_id] && html`<span class="busy-note">${busyText(f.owner_id)}</span>`}
       <//>
       ${f.kind !== 'trip' && html`<${Field} label="Místnost" half>
         <select value=${f.room_id} onChange=${(e) => set('room_id', e.target.value)}>
@@ -522,7 +577,8 @@ function EventForm({ ev, preset, onClose, onSaved }) {
       <div class="field field-wide">
         <span class="field-label">${f.kind === 'trip' ? 'Doprovod' : 'Další vyučující'} <em>nepovinné</em></span>
         <${ChipToggle} items=${others} value=${f.teacher_ids.filter((id) => id !== Number(f.owner_id))} onChange=${(v) => set('teacher_ids', v)}
-          render=${(u) => u.short || u.name} />
+          render=${(u) => u.short || u.name} mutedIf=${(u) => !!taken[u.id]} tipOf=${(u) => busyText(u.id) || u.name} />
+        ${others.some((u) => taken[u.id]) && html`<span class="field-hint"><i class="busy-key"></i> šedě = v tu dobu už má hodinu (najeďte myší pro podrobnosti)</span>`}
       </div>
       ${isLesson && html`<${Field} label="Kapacita" hint="max. počet žáků, nepovinné" half><input type="number" min="1" max="200" value=${f.capacity} onInput=${(e) => set('capacity', e.target.value)} /><//>`}
       ${ev && ev.kind !== 'trip' && html`<${SignupList} ev=${ev} />`}

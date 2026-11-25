@@ -154,6 +154,27 @@ func (a *App) handleListEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"events": evs, "notes": notes})
 }
 
+// checkBlocksOnly: on days that have blocks, teachers put lessons only into them.
+func checkBlocksOnly(me *User, e *Event, s Settings) string {
+	if e.Kind != "lesson" || !s.BlocksOnly || me.atLeast("coordinator") {
+		return ""
+	}
+	day := s.dayBlocks(e.Date)
+	if len(day) == 0 || s.blockFor(e.Date, e.Start, e.End) {
+		return ""
+	}
+	times := make([]string, 0, len(day))
+	for _, b := range day {
+		times = append(times, hm(b.Start)+"–"+hm(b.End))
+	}
+	return fmt.Sprintf("Hodiny se plánují do bloků. %s nabízí: %s. Vyberte jeden z nich.", czWeekday(e.Date), strings.Join(times, ", "))
+}
+
+func czWeekday(date string) string {
+	t, _ := parseDate(date)
+	return [...]string{"Neděle", "Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota"}[t.Weekday()]
+}
+
 // validate normalises an event and checks it against the school rules.
 func (a *App) validateEvent(me *User, e *Event, s Settings) string {
 	e.Title = strings.TrimSpace(e.Title)
@@ -337,6 +358,10 @@ func (a *App) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
+	if msg := checkBlocksOnly(me, &in.Event, s); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
+		return
+	}
 	if name, hol := a.isHoliday(in.Date); hol && !me.atLeast("admin") {
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("%s je volno (%s). Na volné dny nelze plánovat.", czDate(in.Date), name))
 		return
@@ -441,6 +466,13 @@ func (a *App) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 	if msg := a.validateEvent(me, &in.Event, s); msg != "" {
 		writeErr(w, http.StatusBadRequest, msg)
 		return
+	}
+	// only when the time changes – editing the note of an older lesson stays possible
+	if in.Date != ev.Date || in.Start != ev.Start || in.End != ev.End || in.Kind != ev.Kind {
+		if msg := checkBlocksOnly(me, &in.Event, s); msg != "" {
+			writeErr(w, http.StatusBadRequest, msg)
+			return
+		}
 	}
 	oldDay, _ := parseDate(ev.Date)
 	newDay, _ := parseDate(in.Date)

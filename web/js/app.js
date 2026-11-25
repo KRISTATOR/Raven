@@ -421,7 +421,7 @@ function App() {
     return {
       boot, me: boot.user, settings: boot.settings,
       maps: { users, subjects, rooms, groups, students },
-      activeUsers: boot.users.filter((u) => u.active),
+      activeUsers: boot.users.filter((u) => u.active && u.role !== 'student'), // staff only: pupils never teach
       myGroups, tutorOf,
       canManageGoals: (sid) => atLeast(boot.user, 'coordinator') || tutorOf(sid) === boot.user.id,
       reloadBoot: loadBoot, toast, confirm, logout,

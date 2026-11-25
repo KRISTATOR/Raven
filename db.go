@@ -384,6 +384,9 @@ type Settings struct {
 	NamesFromEmail bool `json:"names_from_email"`
 	// Time blocks ("bloky hodin") to pick from when planning, set by coordinators and admins.
 	Blocks []TimeBlock `json:"blocks"`
+	// On days that have blocks, teachers put lessons only into them (coordinators and
+	// admins may still choose another time).
+	BlocksOnly bool `json:"blocks_only"`
 }
 
 type TimeBlock struct {
@@ -391,6 +394,24 @@ type TimeBlock struct {
 	Start int    `json:"start"`
 	End   int    `json:"end"`
 	Days  []int  `json:"days"` // weekdays it applies to, 1 = Monday … 5 = Friday
+}
+
+// dayBlocks returns the blocks that apply to the weekday of date.
+func (s Settings) dayBlocks(date string) []TimeBlock {
+	t, ok := parseDate(date)
+	if !ok {
+		return nil
+	}
+	wd := (int(t.Weekday())+6)%7 + 1
+	var out []TimeBlock
+	for _, b := range s.Blocks {
+		for _, d := range b.Days {
+			if d == wd {
+				out = append(out, b)
+			}
+		}
+	}
+	return out
 }
 
 // blockFor says whether start–end on that date is exactly one of the day's blocks.
@@ -431,6 +452,7 @@ func defaultSettings() Settings {
 		AIStudents:     true,
 		AITeachers:     true,
 		NamesFromEmail: true,
+		BlocksOnly:     true,
 	}
 }
 

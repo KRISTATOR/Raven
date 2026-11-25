@@ -200,10 +200,11 @@ export function InkPicker({ value, onChange }) {
   </div>`;
 }
 
-export function ChipToggle({ items, value, onChange, render: renderItem }) {
+// mutedIf(item) greys an item out (still clickable); tipOf(item) explains why.
+export function ChipToggle({ items, value, onChange, render: renderItem, mutedIf, tipOf }) {
   const set = new Set(value);
   return html`<div class="chips">
-    ${items.map((it) => html`<button type="button" class=${'chip' + (set.has(it.id) ? ' on' : '')}
+    ${items.map((it) => html`<button type="button" class=${'chip' + (set.has(it.id) ? ' on' : '') + (mutedIf && mutedIf(it) ? ' is-busy' : '')} title=${(tipOf && tipOf(it)) || null}
       onClick=${() => { const s = new Set(value); s.has(it.id) ? s.delete(it.id) : s.add(it.id); onChange([...s]); }}>
       ${renderItem ? renderItem(it) : it.name}</button>`)}
   </div>`;

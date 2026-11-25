@@ -38,7 +38,7 @@ export function AdminPage({ params }) {
 }
 
 // ---------- Nastavení rozvrhu: the school day, lesson lengths, time blocks, days off, templates ----------
-const SCHEDULE_KEYS = ['day_start', 'day_end', 'circle_start', 'circle_end', 'lunch_start', 'lunch_end', 'trip_weekday', 'slot_step', 'lesson_lengths'];
+const SCHEDULE_KEYS = ['day_start', 'day_end', 'circle_start', 'circle_end', 'lunch_start', 'lunch_end', 'trip_weekday', 'slot_step', 'lesson_lengths', 'blocks_only'];
 
 function blocksByDay(blocks) {
   const by = { 1: [], 2: [], 3: [], 4: [], 5: [] };
@@ -130,7 +130,11 @@ function ScheduleSettings({ section }) {
     </section>
 
     <section class="section blocks" id="sekce-bloky">
-      <div class="section-head"><h2>Bloky hodin</h2><div class="section-aside">pevné časy, ze kterých si vyučující při plánování jen vyberou</div></div>
+      <div class="section-head"><h2>Bloky hodin</h2><div class="section-aside">pevné časy, do kterých vyučující hodiny plánují</div></div>
+      <div class="blocks-only">
+        <label class="check"><input type="checkbox" checked=${f.blocks_only} disabled=${!isAdmin} onChange=${(e) => set('blocks_only', e.target.checked)} /> <b>Učitelé plánují hodiny jen do bloků</b></label>
+        <span class="field-hint">Platí ve dnech, které mají bloky; ve dnech bez bloků se čas volí volně. Koordinátor a správce mohou výjimečně zvolit jiný čas. Kliknutí do rozvrhu vždy začne hodinu na začátku bloku, do kterého kliknete.</span>
+      </div>
       <${BlockEditor} cfg=${f} byDay=${f.byDay} onChange=${(byDay) => set('byDay', byDay)} />
     </section>
 

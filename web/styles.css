@@ -1160,3 +1160,14 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
 .past-hol summary { cursor: pointer; font-size: 14px; color: var(--ink-2); padding: 6px 0; }
 @media (max-width: 1100px) { .day-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .day-grid { grid-template-columns: 1fr; } .savebar { left: 16px; right: 16px; transform: none; } }
+
+/* busy teachers in the class form: greyed, still clickable */
+.chip.is-busy { color: var(--ink-3); border-style: dashed; background: transparent; }
+.chip.is-busy.on { background: color-mix(in srgb, var(--yellow) 60%, var(--paper)); color: var(--on-gold); border-color: var(--yellow); border-style: dashed; }
+.busy-key { display: inline-block; width: 18px; height: 10px; border: 1px dashed var(--ink-3); vertical-align: -1px; margin-right: 4px; }
+select.is-busy { color: var(--ink-2); border-style: dashed; }
+option.opt-busy { color: #8A877E; }
+.busy-note { display: block; margin-top: 4px; font-size: 12.5px; color: var(--yellow); }
+.block-time { padding: 9px 11px; border: 1px solid var(--rule-soft); background: var(--paper-2); font: 14px var(--mono); }
+.block-time.bad { border-color: var(--red); color: var(--red); }
+.blocks-only { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--rule-soft); background: var(--paper-hi); }
